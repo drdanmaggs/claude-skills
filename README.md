@@ -1,6 +1,6 @@
 # claude-skills
 
-A Claude Code plugin: 25 general-purpose skills and 15 supporting agents for test-driven
+A Claude Code plugin: 24 general-purpose skills and 15 supporting agents for test-driven
 development, code review, shipping, and project hygiene.
 
 These previously lived inside [rocket-fuel](https://github.com/drdanmaggs/rocket-fuel), a
@@ -29,7 +29,6 @@ auto-trigger on relevant phrasing.
 | `create-pr` | PRs with titles that pass conventional-commit CI validation |
 | `pr-quality` | Autonomous loop — processes review feedback and CI until clean |
 | `resolve-conflict` | Rebases and resolves conflicts, stopping only when genuinely ambiguous |
-| `ci-verify` | Runs the full local CI equivalent before pushing |
 | `git-workflow` | Commit, branch and PR conventions |
 
 ### Review
