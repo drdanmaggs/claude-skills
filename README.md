@@ -1,6 +1,6 @@
 # claude-skills
 
-A Claude Code plugin: 24 general-purpose skills and 15 supporting agents for test-driven
+A Claude Code plugin: 22 general-purpose skills and 15 supporting agents for test-driven
 development, code review, shipping, and project hygiene.
 
 These previously lived inside [rocket-fuel](https://github.com/drdanmaggs/rocket-fuel), a
@@ -61,7 +61,6 @@ are reported.
 | `github-issue-relationships` | Blocked-by/blocking links and epic hierarchies |
 | `write-concise-docs` | Rewrites verbose docs into scannable, token-efficient form |
 | `skill-creator` | Guide for writing and updating skills |
-| `find-skills` | Discovers and installs skills |
 
 ### Stack-specific
 
@@ -72,7 +71,22 @@ are reported.
 | `react-email` | HTML email templates as React components |
 | `resend` | Sending, receiving, audiences, broadcasts |
 | `email-best-practices` | Deliverability, SPF/DKIM/DMARC, compliance |
-| `langfuse` | LLM observability — traces, scores, metrics |
+
+## Deliberately not included
+
+Some skills are better taken from their vendor than vendored here. Install these with the
+[Skills CLI](https://skills.sh/) instead — they are first-party and stay current on their
+own:
+
+```bash
+npx skills add vercel-labs/skills@find-skills          # discovers and installs skills
+npx skills add langfuse/skills@langfuse                # LLM observability
+npx skills add stripe/ai@stripe-best-practices         # Stripe integration guidance
+```
+
+This plugin shipped its own `find-skills` and `langfuse` until they were removed in favour
+of the upstream versions, which are maintained by the tools' own authors. A second copy
+here would shadow whichever one you installed and then rot.
 
 ## Hooks
 
@@ -91,6 +105,20 @@ work. Run its 13-case offline test matrix with:
 ```bash
 bash hooks/tdd-gate.test.sh
 ```
+
+## Rules do not belong here
+
+`rules/` is not a plugin primitive. A `rules/` directory in a plugin is copied into the
+install cache and never loaded — nothing reads it. Rocket Fuel shipped eight rule files
+that way for four months with no effect whatsoever.
+
+Rules that actually load live in `~/.claude/rules/`, referenced from `~/.claude/CLAUDE.md`.
+Put them there.
+
+The failure mode is quiet: of the five files that existed in both places, four were
+byte-identical and `testing.md` had drifted, with the *better* version — a section on tests
+owning their own data rather than querying for pre-existing records — sitting in the copy
+nothing read. It was ported across before the plugin copy was deleted.
 
 ## Relationship to rocket-fuel
 
