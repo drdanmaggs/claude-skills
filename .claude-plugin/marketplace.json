@@ -1,0 +1,15 @@
+{
+  "name": "claude-skills",
+  "description": "Claude Code skills marketplace — TDD, code review, shipping, testing, docs, and project hygiene",
+  "owner": {
+    "name": "drdanmaggs"
+  },
+  "plugins": [
+    {
+      "name": "claude-skills",
+      "description": "General-purpose Claude Code skills and agents — TDD, code review, shipping, testing, docs, and project hygiene",
+      "source": ".",
+      "category": "development"
+    }
+  ]
+}

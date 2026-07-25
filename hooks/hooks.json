@@ -1,0 +1,17 @@
+{
+  "description": "Rocket Fuel TDD phase gate — enforces RED/GREEN/REFACTOR file discipline when a repo has an active .tdd-phase file",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-gate.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
