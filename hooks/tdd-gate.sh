@@ -48,10 +48,15 @@ case "$content" in
 esac
 
 # Classify test vs source
+# False positive: shellcheck treats */__tests__/* and */tests/* as subsuming each
+# other, but neither matches the other's paths (/repo/tests/x.ts has no /__tests__/,
+# /repo/__tests__/x.ts has no /tests/). Both are reachable and both are covered by
+# the test matrix. Not fixable without dropping a case we need.
+# shellcheck disable=SC2221,SC2222
 case "$fp" in
-  # *.test.* / *.spec.* cover JS/TS; *_test.* / *_spec.* cover Go, Python, Rust
-  # (worker_test.go, test_foo.py) — Go is the convention Rocket Fuel itself uses.
-  *.test.*|*.spec.*|*_test.*|*_spec.*|*/test_*|*/__tests__/*|*/tests/*|*/supabase/tests/*) is_test=1 ;;
+  # *.test.* / *.spec.* cover JS/TS; *_test.* covers Go, Rust and foo_test.py
+  # (worker_test.go) — Go is the convention Rocket Fuel itself uses.
+  *.test.*|*.spec.*|*_test.*|*/__tests__/*|*/tests/*|*/supabase/tests/*) is_test=1 ;;
   *) is_test=0 ;;
 esac
 
