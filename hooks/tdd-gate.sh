@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tdd-gate.sh — PreToolUse (Edit|Write|MultiEdit) gate enforcing TDD phase discipline.
-# Shipped by the rocket-fuel plugin; registered via hooks/hooks.json.
+# Shipped by the claude-skills plugin; registered via hooks/hooks.json.
 #
 # Reads a `.tdd-phase` file at the repo root (RED|GREEN|REFACTOR). Absent => invisible.
 #   RED      : may edit tests, NOT source  (write the failing test first)

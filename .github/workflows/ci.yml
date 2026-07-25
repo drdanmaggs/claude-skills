@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hooks:
+    name: Hook tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify jq is available
+        # The gate degrades to a no-op without jq, which would make the
+        # matrix vacuously green. Fail loudly instead.
+        run: jq --version
+
+      - name: Run TDD gate test matrix
+        run: ./hooks/tdd-gate.test.sh
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run shellcheck on hooks
+        run: shellcheck hooks/*.sh
+
+  manifest:
+    name: Plugin manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate JSON manifests
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            if jq empty "$f" 2>/dev/null; then
+              echo "ok   $f"
+            else
+              echo "FAIL $f"; fail=1
+            fi
+          done < <(find . -path ./.git -prune -o -name '*.json' -print)
+          exit "$fail"
+
+      - name: Every skill has a SKILL.md with frontmatter
+        run: |
+          fail=0
+          for d in skills/*/; do
+            f="${d}SKILL.md"
+            if [ ! -f "$f" ]; then
+              echo "FAIL ${d} — no SKILL.md"; fail=1; continue
+            fi
+            if [ "$(head -n1 "$f")" != "---" ]; then
+              echo "FAIL $f — missing YAML frontmatter"; fail=1; continue
+            fi
+            echo "ok   $f"
+          done
+          exit "$fail"
