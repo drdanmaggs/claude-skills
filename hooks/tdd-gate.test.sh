@@ -7,7 +7,7 @@ HOOK="$(cd "$(dirname "$0")" && pwd)/tdd-gate.sh"
 PASS=0; FAIL=0
 
 T="$(mktemp -d)"
-mkdir -p "$T/src" "$T/tests" "$T/docs/plans"
+mkdir -p "$T/src" "$T/tests" "$T/docs/plans" "$T/internal/worker" "$T/__tests__"
 trap 'rm -rf "$T"' EXIT
 
 set_phase()   { printf '%s' "$1" > "$T/.tdd-phase"; }
@@ -45,6 +45,19 @@ echo "== REFACTOR phase =="
 set_phase REFACTOR
 run_case "REFACTOR: edit source    -> ALLOW" ALLOW "$(payload Edit "$T/src/foo.ts")"
 run_case "REFACTOR: edit test file -> DENY"  DENY  "$(payload Edit "$T/tests/foo.test.ts")"
+
+echo "== Go test-file naming (foo_test.go, not foo.test.go) =="
+set_phase RED
+run_case "RED: edit *_test.go   -> ALLOW" ALLOW "$(payload Edit "$T/internal/worker/worker_test.go")"
+run_case "RED: edit *.go source -> DENY"  DENY  "$(payload Edit "$T/internal/worker/worker.go")"
+set_phase GREEN
+run_case "GREEN: edit *.go source -> ALLOW" ALLOW "$(payload Edit "$T/internal/worker/worker.go")"
+run_case "GREEN: edit *_test.go   -> DENY"  DENY  "$(payload Edit "$T/internal/worker/worker_test.go")"
+
+echo "== directory-based classification (both patterns reachable) =="
+set_phase RED
+run_case "RED: edit tests/helpers.ts     -> ALLOW" ALLOW "$(payload Edit "$T/tests/helpers.ts")"
+run_case "RED: edit __tests__/helpers.ts -> ALLOW" ALLOW "$(payload Edit "$T/__tests__/helpers.ts")"
 
 echo "== content bans (minimal) =="
 set_phase RED

@@ -48,6 +48,10 @@ Before any exploration or planning, get onto a fresh feature branch — **follow
 
 This ensures all exploration, planning, and coding happens on a clean branch against the latest codebase.
 
+### Arm the Phase Gate
+
+Ensure `.tdd-phase` is in the repo's `.gitignore` (append it if missing — it's per-session state and must never be committed). The file itself gets written per phase inside the loop; see [The `.tdd-phase` File](#the-tdd-phase-file-declare-the-phase-before-you-spawn).
+
 ### Planning Decision Tree
 
 **0-check:** Look for existing plan file in `docs/plans/*.md`
@@ -127,6 +131,24 @@ This gives a live progress view throughout the session — the user can see whic
 
 For each iteration, you (the orchestrator) do exactly this:
 
+### The `.tdd-phase` File (declare the phase before you spawn)
+
+This plugin ships a `PreToolUse` hook (`hooks/tdd-gate.sh`) that enforces phase discipline mechanically — in RED it refuses edits to source, in GREEN and REFACTOR it refuses edits to tests. It reads a single-word `.tdd-phase` file at the repo root and **is completely inert when that file is absent**.
+
+So the orchestrator must write it. Before spawning any phase subagent:
+
+```bash
+printf 'RED' > .tdd-phase        # or GREEN, or REFACTOR
+```
+
+Rules:
+- **Write it before the spawn, not after.** The gate is what stops a subagent from cheating; declaring the phase late defeats the point.
+- **The orchestrator is the only writer.** Subagents never change their own phase — that would be marking their own homework.
+- **Delete it at Completion** (`rm -f .tdd-phase`), so ordinary non-TDD editing in the repo is unconstrained afterwards.
+- **Add `.tdd-phase` to the repo's `.gitignore`** during Stage 0 if it isn't there. It's session state, never committed.
+
+If the gate denies an edit, that is the gate working. Fix the phase or fix the edit — never delete `.tdd-phase` to get around it.
+
 ### 1. Read Plan → Find Next Test
 
 Read the active plan file in `docs/plans/`. Find the **first unchecked** `- [ ]` item (simple regex search: `- \[ \]`). Note the slice, test type, and description.
@@ -140,7 +162,7 @@ Read the active plan file in `docs/plans/`. Find the **first unchecked** `- [ ]`
 **You (Opus) judge whether the code the next test will touch needs structural prep** before new behavior goes in (Kent Beck's "Tidy First?"). Spawn the tdd-refactorer (Mode: PREP) **only if** there's a real reason: a long/tangled function about to grow, poor naming that obscures where the new code goes, or duplication the new code would amplify.
 
 - **New code, or target already clean/small/clear** → skip the spawn, note `TIDY FIRST: skip`, go to RED. Don't launch an agent to be told "SKIP".
-- **Genuine prep needed** → spawn tdd-refactorer with the brief (see [phase-prompts.md](references/phase-prompts.md#tidy-first-phase-tdd-refactorer-prep)); structural changes only.
+- **Genuine prep needed** → `printf 'REFACTOR' > .tdd-phase`, then spawn tdd-refactorer with the brief (see [phase-prompts.md](references/phase-prompts.md#tidy-first-phase-tdd-refactorer-prep)); structural changes only.
 
 **GATE:** ALL tests still PASS after tidying (when tidying is done).
 
@@ -157,6 +179,12 @@ refactor: [prep tidy — what was restructured and why]
 **Before spawning,** confirm inline (no formal thinking pass): the next unchecked plan item is the next test, and the brief asks for **EXACTLY ONE** test (1 test → 1 implementation → 1 refactor; batching breaks the cycle). Reach for Sequential Thinking only if the next test is genuinely ambiguous.
 
 Compose a lean phase brief using the template from [phase-prompts.md](references/phase-prompts.md#red-phase-tdd-test-writer). Pass file paths, not file contents.
+
+**Declare the phase, then spawn:**
+
+```bash
+printf 'RED' > .tdd-phase
+```
 
 Spawn `tdd-test-writer` subagent on **Sonnet** (writing one test from a vetted plan item is well within Sonnet's range, and runs every cycle).
 
@@ -183,6 +211,12 @@ Compose phase brief (see [phase-prompts.md](references/phase-prompts.md#green-ph
 
 Use Sequential Thinking if scope is unclear. When in doubt, start with Haiku — if it struggles, respawn with Sonnet.
 
+**Declare the phase, then spawn:**
+
+```bash
+printf 'GREEN' > .tdd-phase
+```
+
 Spawn `tdd-implementer` subagent.
 
 **GATE:** ALL tests in scope must PASS.
@@ -208,6 +242,12 @@ feat: [what was implemented to pass it]
 **You (Opus) judge the GREEN diff.** If it introduced something worth cleaning — duplication, a complex conditional, unclear naming, or it's more than ~10 lines — spawn the tdd-refactorer (Mode: REFACTOR). If the change is small and clean, skip the spawn, note `REFACTOR: skip`, and move on. (Cumulative mess is still caught by the mandatory full-slice refactor at each slice boundary — see step 6.)
 
 Compose phase brief (see [phase-prompts.md](references/phase-prompts.md#refactor-phase-tdd-refactorer)) with test + implementation file paths. Bump the refactorer to `model: "sonnet"` for a substantial multi-file refactor; Haiku is fine for localized cleanups.
+
+**Declare the phase, then spawn:**
+
+```bash
+printf 'REFACTOR' > .tdd-phase
+```
 
 **GATE:** ALL tests still PASS after refactoring (when refactoring is done).
 
@@ -308,6 +348,7 @@ Commits have been happening throughout the loop (behavioral after GREEN, structu
 
 1. Mark plan file complete (all slices `Status: done`)
 2. Verify `git log --oneline` shows clean commit history — each commit is either behavioral or structural, never mixed
+3. Tear down the phase gate: `rm -f .tdd-phase` — leaving it behind constrains ordinary editing in the repo after the session ends
 
 ### Outer Loop: Acceptance Test Gate
 
@@ -540,6 +581,7 @@ Auto-skip for simple/localized changes. Auto-run for critical/complex changes. W
 3. **GREEN gate**: ALL tests must PASS before REFACTOR
 4. **REFACTOR gate**: ALL tests must still PASS
 5. **Bug diagnosis gate**: If diagnostic test passes, diagnosis is wrong
+6. **Phase declaration gate**: `.tdd-phase` is written **before** each subagent spawn, and never deleted to work around a denial
 
 ### Anti-Cheat
 
