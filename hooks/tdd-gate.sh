@@ -49,7 +49,9 @@ esac
 
 # Classify test vs source
 case "$fp" in
-  *.test.*|*.spec.*|*/__tests__/*|*/tests/*|*/supabase/tests/*) is_test=1 ;;
+  # *.test.* / *.spec.* cover JS/TS; *_test.* / *_spec.* cover Go, Python, Rust
+  # (worker_test.go, test_foo.py) — Go is the convention Rocket Fuel itself uses.
+  *.test.*|*.spec.*|*_test.*|*_spec.*|*/test_*|*/__tests__/*|*/tests/*|*/supabase/tests/*) is_test=1 ;;
   *) is_test=0 ;;
 esac
 
