@@ -106,6 +106,20 @@ work. Run its 13-case offline test matrix with:
 bash hooks/tdd-gate.test.sh
 ```
 
+## Rules do not belong here
+
+`rules/` is not a plugin primitive. A `rules/` directory in a plugin is copied into the
+install cache and never loaded — nothing reads it. Rocket Fuel shipped eight rule files
+that way for four months with no effect whatsoever.
+
+Rules that actually load live in `~/.claude/rules/`, referenced from `~/.claude/CLAUDE.md`.
+Put them there.
+
+The failure mode is quiet: of the five files that existed in both places, four were
+byte-identical and `testing.md` had drifted, with the *better* version — a section on tests
+owning their own data rather than querying for pre-existing records — sitting in the copy
+nothing read. It was ported across before the plugin copy was deleted.
+
 ## Relationship to rocket-fuel
 
 `rocket-fuel` keeps only what depends on it: the `board-setup` and `worktree-reset` skills
