@@ -86,7 +86,7 @@ Counts are all-state, taken 2026-07-31. **Re-run `scripts/label-usage.sh` before
 | `good first issue` · `help wanted` · `invalid` · `wontfix` | ~2 · 0 · 0 · 0 | retire unused defaults |
 | `epic` · `needs-triage` · `ready` · `blocked` · `consider-closing` · `duplicate` · `dependencies` · `javascript` | — | **reserved — keep** |
 
-## Worked mapping — `Maggnetic/family-meal-planner-v3` (28 → 19)
+## Worked mapping — `Maggnetic/family-meal-planner-v3` (27 → 19)
 
 | Current | Uses | Action |
 |---|---|---|
