@@ -57,9 +57,12 @@ run_case() { # <desc> <INSTALL|SKIP> <cwd> [env assignments...]
   local marker="$T/marker.$RANDOM"
   : > "$marker"
   local status actual
-  # shellcheck disable=SC2086 # deliberate: extra env assignments are optional
+  # `env -u CI` is load-bearing. The hook deliberately no-ops when CI is set,
+  # and GitHub Actions sets CI=true for every step — so without this the three
+  # INSTALL cases pass locally (CI unset) and fail in CI. That happened.
+  # Cases that WANT the CI guard pass CI=true in "$@", which lands after -u.
   printf '{"cwd":"%s"}' "$cwd" \
-    | env PNPM_MARKER="$marker" "$@" "$HOOK" >/dev/null 2>&1
+    | env -u CI PNPM_MARKER="$marker" "$@" "$HOOK" >/dev/null 2>&1
   status=$?
   if [ -s "$marker" ]; then actual=INSTALL; else actual=SKIP; fi
 
