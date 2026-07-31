@@ -26,15 +26,18 @@ Determine scope from user input or default to all open issues.
 # Default: all open issues (paginate if needed)
 gh issue list --state open --json number,title,body,labels,createdAt,author --limit 200
 
-# With label filter
-gh issue list --label "tech-debt" --state open --json number,title,body,labels,createdAt,author
+# With label filter — the canon type is `technical-debt`. This read `tech-debt`
+# for a long time, which is not a label any repo has, so it always returned
+# nothing. Check `gh label list` before inventing a filter.
+gh issue list --label "technical-debt" --state open --json number,title,body,labels,createdAt,author
 
 # Single issue (skips straight to Stage 3)
 gh issue view {number} --json number,title,body,labels,createdAt,author,comments
 ```
 
 **Quick filter** — exclude before screening:
-- Labels: `enhancement`, `feature` (feature requests)
+- Labels: `enhancement` (feature requests). There is no `feature` label — the canon
+  type is `enhancement`; check `gh label list` before filtering on a name.
 - Issues with milestones assigned
 - Issues created in the last 7 days
 

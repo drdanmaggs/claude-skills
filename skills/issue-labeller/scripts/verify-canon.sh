@@ -68,11 +68,14 @@ while IFS= read -r file; do
   # --label X, --label=X, --add-label X, --remove-label X (quoted or bare)
   while IFS=: read -r lineno match; do
     [ -z "${match:-}" ] && continue
-    label=$(sed -E 's/.*--(label|add-label|remove-label)[= ]+//; s/^["'"'"']//; s/["'"'"'].*$//; s/[[:space:]].*$//' <<< "$match")
+    # Strip the opening quote/backtick, then everything from the closing one.
+    # The trailing backtick matters: these files are markdown, so `--label bug`
+    # inside inline code is the normal way a label appears here.
+    label=$(sed -E 's/.*--(label|add-label|remove-label)[= ]+//; s/^["'"'"'`]//; s/["'"'"'`].*$//; s/[[:space:]].*$//; s/[,.)]+$//' <<< "$match")
     [ -z "$label" ] && continue
     case "$label" in '$'*|'{'*|'<'*|'') continue ;; esac   # placeholders, not literals
     is_allowed "$label" || report "${file#"$ROOT"/}" "$lineno" "'$label'" "$(hint_for "$label")"
-  done < <(grep -nEo -- '--(label|add-label|remove-label)[= ]+["'"'"']?[A-Za-z$<{][^"'"'"'[:space:]]*' "$file" 2>/dev/null)
+  done < <(grep -nEo -- '--(label|add-label|remove-label)[= ]+["'"'"'`]?[A-Za-z$<{][^"'"'"'`[:space:]]*' "$file" 2>/dev/null)
 
   # labels: ["a", "b"]  (the MCP create_issue form)
   while IFS=: read -r lineno match; do

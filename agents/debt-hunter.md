@@ -54,12 +54,23 @@ For each problem found, create a GitHub issue with:
 
 **Title**: Clear, specific (e.g., "Consolidate AI client logic scattered across 4 API routes")
 
-**Labels**: `technical-debt`, plus severity label (`critical`, `high`, `medium`, `low`)
+**Labels**: pass `labels: ["technical-debt"]` to `mcp__github__create_issue`, adding at most
+one `area:*` label from the repo's existing set (`mcp__github__list_issues` or
+`gh label list` to see them). Real labels — not a `Labels:` line in the body.
+
+Do **not** label severity. The canon has no priority axis, and a `critical`/`high`/
+`medium`/`low` label is one. Severity belongs in the **Impact** line of the body below,
+where it carries its reasoning with it. See `skills/issue-labeller/references/canon.yml`.
 
 **Body**:
 ```
 ## The Problem
 [What's wrong and why it matters]
+
+## Impact
+[Critical/High/Medium/Low, and *why* — what breaks, or what it costs to keep
+living with. This replaces the old severity label: a word on its own decays,
+a sentence of reasoning survives.]
 
 ## Where It Lives
 [Specific files and line numbers]

@@ -66,8 +66,14 @@ gh pr list --search "fix test" --state all --limit 5
 ### Check for Flaky-Test GitHub Issue (CRITICAL)
 
 ```bash
-# Search for existing flaky-test issue
+# Fast path — the label /skip-failed-test now applies
 gh issue list --label "flaky-test" --state open --search "in:title \"[test name]\""
+
+# Fall through to the title prefix. Issues filed before the label was applied
+# for real (it used to be written into the issue *body* as a `Labels:` line,
+# so the query above matched nothing) are only findable this way.
+gh issue list --state open --json number,title,labels \
+  --search 'in:title "[Flaky Test]" in:title "[test name]"'
 ```
 
 ⚠️ **If issue exists:** Even if test passes now, MUST do Step 5.5 (Deep Investigation). Flaky tests don't fail consistently - single pass proves nothing.
@@ -186,7 +192,9 @@ Task tool:
 - 🤔 **Uncertain:** Ask user
 
 **Auto-create issues for incidental bugs:**
-If you discover unrelated bugs during investigation, create GitHub issues automatically (no approval needed). See `references/bug-analysis.md` for details.
+If you discover unrelated bugs during investigation, create GitHub issues automatically
+(no approval needed): `gh issue create --title "..." --label bug --body-file -`.
+See `references/bug-analysis.md` for details.
 
 ---
 

@@ -352,11 +352,16 @@ const validations = [
 4. If still failing → Mark as SKIPPED
 
 **For SKIPPED files:**
-- Create GitHub issue (auto, no approval)
+- Create GitHub issue (auto, no approval):
+  ```bash
+  gh issue create --title "Add tests for [file] - auto-generation failed" \
+    --label test-gap --label area:testing --body-file - <<'EOF'
+  ...
+  EOF
+  ```
 - Template:
   ```markdown
   Title: Add tests for [file] - auto-generation failed
-  Labels: testing, auto-generated, needs-manual-work
 
   Critical path testing identified `[file]` (Score: [X]) but auto-generation failed after 2 attempts.
 
@@ -559,10 +564,16 @@ Add these to backlog? [yes/no]
 
 **If yes:** Create GitHub issues (auto, no approval)
 
+```bash
+gh issue create --title "Add tests for [file]" \
+  --label test-gap --label area:testing --body-file - <<'EOF'
+...
+EOF
+```
+
 **Issue template:**
 ```markdown
 Title: Add tests for [file]
-Labels: testing, critical-path, auto-generated
 
 Critical path testing identified `[file]` (Score: [X]) as untested.
 
