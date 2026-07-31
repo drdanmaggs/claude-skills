@@ -1,5 +1,5 @@
 {
-  "description": "TDD phase gate (RED/GREEN/REFACTOR file discipline when a repo has an active .tdd-phase file) and issue label gate (an issue must be created with a label; the label set must not grow without approval)",
+  "description": "TDD phase gate (RED/GREEN/REFACTOR file discipline when a repo has an active .tdd-phase file), issue label gate (an issue must be created with a label; the label set must not grow without approval), and pnpm install-freshness (reinstalls at session start when node_modules has fallen behind pnpm-lock.yaml)",
   "hooks": {
     "PreToolUse": [
       {
@@ -19,6 +19,18 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/label-gate.sh",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pnpm-install-session-start.sh",
+            "timeout": 120
           }
         ]
       }
