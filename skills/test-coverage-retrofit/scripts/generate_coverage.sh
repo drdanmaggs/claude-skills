@@ -15,27 +15,35 @@ if [ -n "$SKIP_PATTERN" ]; then
   echo "⚠️  Skipping failing tests: $SKIP_PATTERN"
 fi
 
-# Build Vitest command
-CMD="npx vitest run --coverage \
-  --coverage.enabled=true \
-  --coverage.reporter=json \
-  --coverage.reporter=html \
-  --coverage.reportsDirectory=./coverage"
-
-# Add scope
-CMD="$CMD \"$SCOPE\""
+# Build the command as an ARRAY, not a string.
+#
+# This was `CMD="npx vitest ..."` assembled by string concatenation and run
+# through `eval $CMD`, which re-parses the whole line — so anything in $1 or $2
+# that survived quoting was executed, not passed. `./generate_coverage.sh
+# 'lib/`id`'` ran `id`, and a scope of `x"; rm -rf ~; echo "` did what it says.
+# An array passes every element to the process verbatim: no re-parse, no
+# splitting, no globbing, and nothing to escape.
+CMD=(
+  npx vitest run --coverage
+  --coverage.enabled=true
+  --coverage.reporter=json
+  --coverage.reporter=html
+  --coverage.reportsDirectory=./coverage
+  "$SCOPE"
+)
 
 # Add skip pattern if provided (exclude failing test files)
 if [ -n "$SKIP_PATTERN" ]; then
   # Convert pipe-separated list to multiple --exclude flags
   IFS='|' read -ra SKIP_ARRAY <<< "$SKIP_PATTERN"
   for skip in "${SKIP_ARRAY[@]}"; do
-    CMD="$CMD --exclude \"**/${skip}\""
+    # Quoted so the shell leaves the ** glob for vitest to interpret.
+    CMD+=(--exclude "**/${skip}")
   done
 fi
 
 # Execute command
-eval $CMD
+"${CMD[@]}"
 
 echo "✅ Coverage reports generated:"
 echo "   - JSON: ./coverage/coverage-final.json"

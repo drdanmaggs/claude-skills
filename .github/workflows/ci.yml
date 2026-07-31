@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   hooks:
-    name: Hook tests
+    name: Shell test matrices
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -20,16 +20,19 @@ jobs:
         # matrices vacuously green. Fail loudly instead.
         run: jq --version
 
-      - name: Run every hook test matrix
+      - name: Run every shell test matrix
         # Discovered, not enumerated. A named-step-per-test means a new test
         # file silently never runs — which is the exact failure mode these
         # hooks exist to prevent. Fails if zero are found, so a rename or a
         # bad glob can't pass as "all green".
+        #
+        # Covers skills/*/scripts/ too: generate_coverage.test.sh lives there,
+        # and a test that only runs locally is a test that stops running.
         run: |
           shopt -s nullglob
-          tests=(hooks/*.test.sh)
+          tests=(hooks/*.test.sh skills/*/scripts/*.test.sh)
           if [ ${#tests[@]} -eq 0 ]; then
-            echo "FAIL — no hooks/*.test.sh found; this job would be vacuously green"
+            echo "FAIL — no *.test.sh found; this job would be vacuously green"
             exit 1
           fi
           fail=0
@@ -45,11 +48,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Run shellcheck on hooks and issue-labeller scripts
-        # Not yet widened to skills/*/scripts/*.sh — test-coverage-retrofit
-        # trips SC2086 on an `eval $CMD`, and fixing that needs its own change
-        # with its own verification. Tracked separately.
-        run: shellcheck hooks/*.sh skills/issue-labeller/scripts/*.sh
+      - name: Run shellcheck on every shell script
+        # Discovered, not enumerated, and fails on zero — same reasoning as the
+        # test matrices above. Enumerating directories is how
+        # skills/test-coverage-retrofit sat unchecked long enough to grow a
+        # command-injection bug (#10).
+        run: |
+          shopt -s nullglob
+          scripts=(hooks/*.sh skills/*/scripts/*.sh)
+          if [ ${#scripts[@]} -eq 0 ]; then
+            echo "FAIL — no shell scripts found; this job would be vacuously green"
+            exit 1
+          fi
+          printf 'checking %s\n' "${scripts[@]}"
+          shellcheck "${scripts[@]}"
 
   manifest:
     name: Plugin manifest
