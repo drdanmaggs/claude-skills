@@ -89,6 +89,10 @@ Report the linked issue numbers to the user.
 - Parent-child REQUIRES `-H "GraphQL-Features: sub_issues"` — missing it fails silently
 - Always batch node ID lookups into one GraphQL query
 - `issueId` = the blocked/child issue; `blockingIssueId`/`subIssueId` = the blocker/parent
+- The `epic` label is cosmetic. `addSubIssue` is the source of truth for hierarchy —
+  never infer parentage from the label, and never add the label in place of the link.
+  An epic issue still needs a type label like any other; see
+  [issue-labeller](../issue-labeller/SKILL.md)
 
 ## Reference
 

@@ -176,7 +176,10 @@ For approved MERGES:
 1. Comment on the duplicate referencing the surviving issue
 2. Close the duplicate
 
-For KEEP issues (optional):
-- Re-label if the user requests (e.g., priority labels)
+For KEEP issues:
+- Hand the kept numbers to [issue-labeller](../issue-labeller/SKILL.md) Mode C —
+  it takes an explicit issue list, so nothing gets re-fetched.
+- **Do not assign priority labels.** The canon has no priority axis; see
+  `no_priority` in [canon.yml](../issue-labeller/references/canon.yml).
 
 Report: "Closed {N} issues, kept {M}. Backlog reduced by {percentage}%."

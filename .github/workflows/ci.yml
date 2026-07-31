@@ -23,14 +23,20 @@ jobs:
       - name: Run TDD gate test matrix
         run: ./hooks/tdd-gate.test.sh
 
+      - name: Run label gate test matrix
+        run: ./hooks/label-gate.test.sh
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Run shellcheck on hooks
-        run: shellcheck hooks/*.sh
+      - name: Run shellcheck on hooks and issue-labeller scripts
+        # Not yet widened to skills/*/scripts/*.sh — test-coverage-retrofit
+        # trips SC2086 on an `eval $CMD`, and fixing that needs its own change
+        # with its own verification. Tracked separately.
+        run: shellcheck hooks/*.sh skills/issue-labeller/scripts/*.sh
 
   manifest:
     name: Plugin manifest
@@ -64,3 +70,8 @@ jobs:
             echo "ok   $f"
           done
           exit "$fail"
+
+      - name: Labels in skills and agents are on-canon
+        # Stops the issue-creating callers drifting back into invented labels.
+        # Six of the label names they used to write existed in no repo at all.
+        run: ./skills/issue-labeller/scripts/verify-canon.sh
