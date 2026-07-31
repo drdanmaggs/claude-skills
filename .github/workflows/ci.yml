@@ -16,15 +16,28 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Verify jq is available
-        # The gate degrades to a no-op without jq, which would make the
-        # matrix vacuously green. Fail loudly instead.
+        # The hooks degrade to a no-op without jq, which would make their
+        # matrices vacuously green. Fail loudly instead.
         run: jq --version
 
-      - name: Run TDD gate test matrix
-        run: ./hooks/tdd-gate.test.sh
-
-      - name: Run label gate test matrix
-        run: ./hooks/label-gate.test.sh
+      - name: Run every hook test matrix
+        # Discovered, not enumerated. A named-step-per-test means a new test
+        # file silently never runs — which is the exact failure mode these
+        # hooks exist to prevent. Fails if zero are found, so a rename or a
+        # bad glob can't pass as "all green".
+        run: |
+          shopt -s nullglob
+          tests=(hooks/*.test.sh)
+          if [ ${#tests[@]} -eq 0 ]; then
+            echo "FAIL — no hooks/*.test.sh found; this job would be vacuously green"
+            exit 1
+          fi
+          fail=0
+          for t in "${tests[@]}"; do
+            echo "== $t"
+            "$t" || fail=1
+          done
+          exit "$fail"
 
   shellcheck:
     name: ShellCheck
