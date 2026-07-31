@@ -445,10 +445,11 @@ Task tool:
    - Commit separately: `test: regression coverage for [pattern class]`
 
 3. **Process SKIP findings automatically:**
-   - Create GitHub issue for each
-   - Title: `[Regression] {finding description}`
+   - Create GitHub issue for each:
+     `gh issue create --title "[Regression] {finding}" --label test-gap --body-file -`
    - Body: Include location, risk, test type, reasoning for deferral
-   - Labels: "regression-analysis", "test-gap"
+   - The `[Regression]` title prefix carries the provenance — it does not need
+     a label of its own
    - Link to original PR/commit
 
 **No user prompt** - automatic YAGNI-compliant filtering prevents scope creep while catching real bugs.

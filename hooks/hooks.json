@@ -1,5 +1,5 @@
 {
-  "description": "TDD phase gate — enforces RED/GREEN/REFACTOR file discipline when a repo has an active .tdd-phase file",
+  "description": "TDD phase gate (RED/GREEN/REFACTOR file discipline when a repo has an active .tdd-phase file) and issue label gate (an issue must be created with a label; the label set must not grow without approval)",
   "hooks": {
     "PreToolUse": [
       {
@@ -8,6 +8,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/tdd-gate.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "^(Bash|mcp__[A-Za-z0-9_-]*__create_issue)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/label-gate.sh",
             "timeout": 5
           }
         ]

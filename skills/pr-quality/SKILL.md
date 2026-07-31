@@ -145,7 +145,9 @@ Read the review content and apply the YAGNI filter:
 - CLAUDE.md violations
 - Missing tests for shipped behaviour
 
-**Defer (low signal → create GitHub issue instead):**
+**Defer (low signal → `gh issue create --label technical-debt --body-file -`, or
+`--label enhancement` when the finding is genuinely a feature request; add one
+`area:*` from the repo's existing set):**
 - "Could be more extensible"
 - "Consider adding X for future use"
 - Performance speculation without profiling data

@@ -318,7 +318,23 @@ test.skip('flaky test name', () => {
 });
 ```
 
-2. **Create detailed GitHub issue** (use all context gathered):
+2. **Create detailed GitHub issue** (use all context gathered).
+
+The `flaky-test` label is **not optional** — `/test-fixer` looks the issue up by it
+(`skills/test-fixer/SKILL.md`). For years this was written into the issue *body* as a
+`Labels:` line, so that lookup silently returned nothing every time. Pass it as a real
+label:
+
+```bash
+gh issue create \
+  --title "[Flaky Test] {test name} - blocking PRs" \
+  --label flaky-test --label area:testing \
+  --body-file - <<'EOF'
+{body from the template below}
+EOF
+```
+
+Body template:
 
 ```markdown
 Title: [Flaky Test] Test name is blocking PRs - unrelated to changes
@@ -359,8 +375,6 @@ This test is failing on branch `[branch-name]` but appears unrelated to the PR w
 ## Related Commits
 - Failing started: [commit hash if known]
 - PR branch: [branch name]
-
-Labels: flaky-test, technical-debt, tests
 ```
 
 3. **Commit the skip:**
@@ -569,7 +583,8 @@ Total time: 30 sec (rebase fixes) - 5 min max (full analysis)
 **For documentation:**
 - GitHub issue with full context
 - Clear title: `[Flaky Test] Test name - blocking PRs`
-- Labels: `flaky-test`, `technical-debt`, `tests`
+- Real labels: `--label flaky-test --label area:testing` (never a `Labels:` body line —
+  `/test-fixer` looks the issue up by the `flaky-test` label)
 
 **For fixing later:**
 - /test-fixer skill when ready to address the flakiness

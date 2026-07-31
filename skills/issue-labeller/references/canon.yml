@@ -1,0 +1,155 @@
+# Canonical GitHub issue label taxonomy.
+#
+# Single source of truth. Read by:
+#   - skills/issue-labeller/SKILL.md            (all four modes)
+#   - skills/issue-labeller/scripts/sync-labels.sh
+#   - skills/issue-labeller/scripts/verify-canon.sh  (CI guard)
+#
+# Two axes only:
+#   type  — exactly one, required on every issue
+#   area: — zero to two, optional, declared per repo
+#
+# There is NO priority axis, deliberately. See `no_priority` below.
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# TYPE — exactly one required. Bare names, no namespace prefix.
+#
+# `bug`, `enhancement`, `documentation` and `question` reuse GitHub's own
+# default labels verbatim (same name, same colour) so a repo never ends up
+# holding both `bug` and `type: bug`. That duplication is the single most
+# common way these taxonomies rot.
+# ---------------------------------------------------------------------------
+types:
+  - name: bug
+    color: d73a4a
+    description: Something isn't working
+    github_default: true
+
+  - name: enhancement
+    color: a2eeef
+    # Tightened from GitHub's "New feature or request". The default wording is
+    # why this label becomes a catch-all — it reads as "anything not a bug".
+    description: New user-visible capability
+    github_default: true
+
+  - name: documentation
+    color: 0075ca
+    description: Improvements or additions to documentation
+    github_default: true
+
+  - name: question
+    color: d876e3
+    description: Further information is requested
+    github_default: true
+
+  - name: technical-debt
+    color: "5319e7"
+    # Distinct from `chore`: debt is design cost you chose to carry, chore is
+    # mechanical upkeep. The two lead to different decisions, so they stay split.
+    description: Working code that costs us to live with
+
+  - name: chore
+    color: fef2c0
+    description: Mechanical upkeep — dependencies, config, renames
+
+  - name: test-gap
+    color: 0e8a16
+    description: Missing or inadequate test coverage
+
+  - name: flaky-test
+    color: e99695
+    description: Test fails non-deterministically
+
+  - name: ci-failure
+    color: d93f0b
+    description: CI broken on the default branch
+
+# ---------------------------------------------------------------------------
+# AREA — optional, 0-2 per issue, always `area:` prefixed.
+#
+# The prefix is load-bearing: it makes retirement and querying mechanical
+# (`area:*`) and guarantees a future type label can never collide with an area.
+#
+# Areas below are a STARTING VOCABULARY, not a fixed set. Mode B derives a
+# repo's real areas by renaming its existing labels — never by inventing new
+# ones. Per-repo areas are recorded in that repo's .github/claude-labels.yml.
+# ---------------------------------------------------------------------------
+area_prefix: "area:"
+
+area_baseline:
+  - { name: "area:ui",            color: "1d76db", description: "User interface and interaction" }
+  - { name: "area:testing",       color: "1d76db", description: "Test suites and test infrastructure" }
+  - { name: "area:ci",            color: "1d76db", description: "CI, runners, build and deploy pipeline" }
+  - { name: "area:types",         color: "1d76db", description: "TypeScript types and type safety" }
+  - { name: "area:performance",   color: "1d76db", description: "Latency, throughput, resource use" }
+  - { name: "area:security",      color: "1d76db", description: "Authentication, authorisation, data exposure" }
+  - { name: "area:a11y",          color: "1d76db", description: "Accessibility" }
+  - { name: "area:observability", color: "1d76db", description: "Logging, tracing, metrics, alerting" }
+  - { name: "area:data",          color: "1d76db", description: "Schema, migrations, data integrity" }
+
+# ---------------------------------------------------------------------------
+# RESERVED — never created, never deleted, never assigned by issue-labeller.
+#
+# These are owned by other systems. Touching them breaks routing or loses
+# state that this skill has no authority over.
+# ---------------------------------------------------------------------------
+reserved:
+  # rocket-fuel work routing — agents/integrator.md, agents/worker.md
+  - "workflow:tdd"
+  - "workflow:bug-fix"
+  - "workflow:epc"
+  - "workflow:issue-scope"
+
+  # Hierarchy display. NOT a type — an epic issue still needs one of `types`.
+  # The addSubIssue GraphQL link is the source of truth for parentage; this
+  # label is cosmetic. See skills/github-issue-relationships.
+  - epic
+
+  # Written by dependabot
+  - dependencies
+  - javascript
+  - github_actions
+
+  # Board / triage state, owned by issue-triage and the GitHub Projects board
+  - blocked
+  - ready
+  - needs-triage
+  - consider-closing
+
+  # Written by the GitHub web UI's own close/duplicate flows
+  - duplicate
+  - wontfix
+  - invalid
+
+  # Written by repo CI workflows (family-meal-planner-v3)
+  - automated-audit
+
+# ---------------------------------------------------------------------------
+# NO PRIORITY AXIS
+#
+# issue-labeller must never assign, create, or propose a priority label, and
+# must never offer a replacement scheme when retiring existing ones.
+#
+# Why: priority labels measurably do not survive. productivity-coach-mvp grew
+# THREE parallel systems (`high-priority`/`medium-priority` grey and
+# undescribed, alongside `priority: critical`/`priority: low` coloured and
+# described); family-meal-planner-v3 has a lone capitalised `Priority: Low`.
+# A label that means "I care about this more" decays the moment the person
+# who applied it moves on. Milestones and the project board carry ordering
+# with an owner and a date attached; a colour on an issue does not.
+#
+# Mode D retires the labels below into their own bucket, with NO replacement
+# offered, and prints every affected issue number before asking for approval.
+# ---------------------------------------------------------------------------
+no_priority:
+  forbidden_patterns:
+    - "^priority"
+    - "^Priority"
+    - "-priority$"
+    - "^(critical|high|medium|low)$"
+    - "^p[0-4]$"
+  known_instances:
+    productivity-coach-mvp: [high-priority, medium-priority, "priority: critical", "priority: low"]
+    family-meal-planner-v3: ["Priority: Low"]

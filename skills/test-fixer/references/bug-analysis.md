@@ -361,7 +361,8 @@ See: /microsoft/playwright - strict mode best practices"
 
 **While waiting:**
 - Document the ambiguity
-- Create a GitHub issue to track investigation
+- Create a GitHub issue to track investigation:
+  `gh issue create --title "..." --label question --body-file -`
 - Add TODO comment in code
 - Don't merge PR until resolved
 

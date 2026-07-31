@@ -1,6 +1,6 @@
 # claude-skills
 
-A Claude Code plugin: 22 general-purpose skills and 15 supporting agents for test-driven
+A Claude Code plugin: 23 general-purpose skills and 15 supporting agents for test-driven
 development, code review, shipping, and project hygiene.
 
 These previously lived inside [rocket-fuel](https://github.com/drdanmaggs/rocket-fuel), a
@@ -58,6 +58,7 @@ are reported.
 |---|---|
 | `issue-scope` | Turns vague features into scoped plans with test decomposition |
 | `issue-triage` | Evaluates a backlog against the real codebase; drops what's stale |
+| `issue-labeller` | One type label per issue, optional areas, no priority; retrofits and consolidates |
 | `github-issue-relationships` | Blocked-by/blocking links and epic hierarchies |
 | `write-concise-docs` | Rewrites verbose docs into scannable, token-efficient form |
 | `skill-creator` | Guide for writing and updating skills |
@@ -90,8 +91,16 @@ here would shadow whichever one you installed and then rot.
 
 ## Hooks
 
-`hooks/tdd-gate.sh` is a `PreToolUse` gate that enforces TDD phase discipline. It reads a
-`.tdd-phase` file at the repo root and blocks edits that violate the current phase:
+Both are `PreToolUse` gates with offline test matrices. Run them with:
+
+```bash
+bash hooks/tdd-gate.test.sh      # 19 cases
+bash hooks/label-gate.test.sh    # 50 cases
+```
+
+### `tdd-gate.sh` — TDD phase discipline
+
+Reads a `.tdd-phase` file at the repo root and blocks edits that violate the current phase:
 
 | Phase | Tests | Source |
 |---|---|---|
@@ -99,12 +108,33 @@ here would shadow whichever one you installed and then rot.
 | GREEN | deny | allow |
 | REFACTOR | deny | allow |
 
-It is completely invisible when no `.tdd-phase` file exists, so it never affects non-TDD
-work. Run its 13-case offline test matrix with:
+Completely invisible when no `.tdd-phase` file exists, so it never affects non-TDD work.
+
+### `label-gate.sh` — GitHub issue labels
+
+Denies `gh issue create` (and `create_issue` over MCP) without a label, and denies label
+*creation* — via `gh label`, the REST API, or GraphQL — without an approval token that the
+`issue-labeller` skill writes once you've approved a taxonomy diff.
+
+Unlike `tdd-gate`, this one is **active by default in every repo**. TDD is a mode you enter;
+"an issue has a label" is an invariant. The repos that needed it most had 85–100% of their
+issues unlabelled and would never have opted in.
+
+Two escape hatches:
 
 ```bash
-bash hooks/tdd-gate.test.sh
+CLAUDE_LABELS_SKIP=1 gh issue create --title "..."     # per call, one-shot
 ```
+
+```yaml
+# <repo>/.github/claude-labels.yml — per repo, committed
+enforce: false
+```
+
+Schema: `skills/issue-labeller/references/repo-config.md`. The gate is syntactic — it checks
+a label was passed, not that it was a good one. GitHub's API already rejects unknown labels,
+and `skills/issue-labeller/scripts/verify-canon.sh` fails CI if a skill hard-codes an
+off-canon label.
 
 ## Rules do not belong here
 

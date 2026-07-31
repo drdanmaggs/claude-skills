@@ -556,8 +556,8 @@ Reason: Critical domain (RLS policy), likely untested edge cases (cascades, soft
    - Commit: `test: regression coverage for [pattern class]`
 
 4. Process SKIP findings:
-   - Create GitHub issue for each
-   - Tag: "regression-analysis", "test-gap"
+   - Create GitHub issue for each:
+     `gh issue create --title "[Regression] {finding}" --label test-gap --body-file -`
    - Link to original PR/commit
 
 No user prompt needed - automatic YAGNI-compliant filtering.
