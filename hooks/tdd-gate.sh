@@ -13,9 +13,9 @@
 input=$(cat)
 
 # No jq -> don't get in the way.
-command -v jq >/dev/null 2>&1 || { printf '{"hookSpecificOutput":{}}'; exit 0; }
+command -v jq >/dev/null 2>&1 || { printf '{}'; exit 0; }
 
-neutral() { printf '{"hookSpecificOutput":{}}'; exit 0; }
+neutral() { printf '{}'; exit 0; }
 
 tool=$(echo "$input" | jq -r '.tool_name // "?"')
 fp=$(echo "$input"  | jq -r '.tool_input.file_path // .tool_input.path // ""')
@@ -34,7 +34,7 @@ base=$(basename "$fp")
 content=$(echo "$input" | jq -r '.tool_input.new_string // .tool_input.content // ""')
 
 log()   { echo "$(date +%H:%M:%S) tool=$tool phase=${phase:-none} fp=$fp -> $1" >> "$HOME/.claude/tdd-gate.log"; }
-allow() { log ALLOW; printf '{"hookSpecificOutput":{}}'; exit 0; }
+allow() { log ALLOW; printf '{}'; exit 0; }
 deny()  { log "DENY: $1"; printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}' "$1"; exit 0; }
 
 # Bookkeeping is always allowed
