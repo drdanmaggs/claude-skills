@@ -16,6 +16,13 @@ clear_phase() { rm -f "$T/.tdd-phase"; }
 run_case() { # <desc> <ALLOW|DENY> <payload>
   local desc="$1" expect="$2" payload="$3" out decision
   out="$(printf '%s' "$payload" | "$HOOK" 2>/dev/null)"
+  # Claude Code rejects a hookSpecificOutput block that omits hookEventName and
+  # surfaces "hook error" in the UI on every matched call — including allow paths.
+  if echo "$out" | grep -q '"hookSpecificOutput"' && ! echo "$out" | grep -q '"hookEventName"'; then
+    FAIL=$((FAIL+1))
+    printf '  ✗ %s — hookSpecificOutput missing hookEventName\n     out: %s\n' "$desc" "$out"
+    return
+  fi
   if echo "$out" | grep -q '"permissionDecision":"deny"'; then decision=DENY; else decision=ALLOW; fi
   if [ "$decision" = "$expect" ]; then
     PASS=$((PASS+1)); printf '  ✓ %s\n' "$desc"

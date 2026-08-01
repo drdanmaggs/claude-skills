@@ -26,9 +26,9 @@ input=$(cat)
 
 # No jq -> don't get in the way. (CI asserts jq exists so the test matrix
 # for this hook can't pass vacuously.)
-command -v jq >/dev/null 2>&1 || { printf '{"hookSpecificOutput":{}}'; exit 0; }
+command -v jq >/dev/null 2>&1 || { printf '{}'; exit 0; }
 
-neutral() { printf '{"hookSpecificOutput":{}}'; exit 0; }
+neutral() { printf '{}'; exit 0; }
 
 tool=$(echo "$input" | jq -r '.tool_name // ""' 2>/dev/null) || neutral
 [ -z "$tool" ] && neutral
@@ -38,7 +38,7 @@ log() {
   echo "$(date +%H:%M:%S) hook=$0 tool=$tool -> $1" >> "$HOME/.claude/label-gate.log" 2>/dev/null
   return 0
 }
-allow() { log "ALLOW${1:+ ($1)}"; printf '{"hookSpecificOutput":{}}'; exit 0; }
+allow() { log "ALLOW${1:+ ($1)}"; printf '{}'; exit 0; }
 deny() {
   log "DENY: $1"
   jq -nc --arg r "$1" \
