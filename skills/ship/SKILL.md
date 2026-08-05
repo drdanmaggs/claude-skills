@@ -1,12 +1,16 @@
 ---
 name: ship
-description: End-to-end pre-PR workflow. Commits uncommitted changes, verifies lint/types, runs multi-agent code review, auto-fixes issues, verifies full CI suite, and creates a draft PR. Use when work is done locally and you want to ship it cleanly. Invoke with /ship.
+description: End-to-end pre-PR workflow. Commits uncommitted changes, verifies lint/types, runs a full local multi-agent code review, creates the PR, posts the review to it, and babysits CI until green. Use when work is done locally and you want to ship it cleanly. Invoke with /ship.
 allowed-tools: Bash(git:*), Bash(gh:*), Bash(bun:*), Bash(pnpm:*), Bash(npm:*), Bash(yarn:*), Bash(npx:*), Read, Grep, Glob, Task, Skill
 ---
 
 # Ship
 
-End-to-end workflow from local changes to draft PR. Chains: git hygiene → build verification → code review → fix loop → CI verification → PR creation.
+End-to-end workflow from local changes to a PR under CI review. Chains: git hygiene → build verification → full local review → PR creation → post the review to the PR → CI babysitting.
+
+The review runs here **and** in CI, and it posts its result to the PR. That last
+part is not decoration — see "Why the local review posts to the PR" below before
+changing anything about Stage 2 or Stage 4.
 
 After each stage, report briefly what happened before proceeding.
 
@@ -47,28 +51,18 @@ Run both checks in parallel:
 
 **If ANY check fails → stop immediately.** Report which command failed with the error output. Do not attempt auto-fixes — lint/type failures indicate structural problems requiring manual resolution. Ask the user to fix and re-run `/ship`.
 
-Note: `build` is intentionally excluded — it's not in CI (Vercel runs it on deployment), and it's slow. This gate exists to fail fast before the expensive code review in Stage 2.
+Note: `build` is intentionally excluded — it's not in CI (Vercel runs it on deployment), and it's slow. This gate exists to fail fast locally, before spending a CI run and a review on something that cannot compile.
 
 Report: "Lint and typecheck passed." — or stop with the failure.
 
-## Stage 2: Code Review (fresh context)
+## Docs-only fast path
 
-**Docs-only check:** If ALL committed changes are `*.md`, `*.mdx`, `*.txt`, `*.yml`, `*.yaml`, `*.json` (excluding `package.json`) → skip to Stage 2 Auto-merge.
+Evaluate this **before** Stage 2 — there is no point running six agents over a
+branch with no code in it.
 
-Call `Skill("code-reviewer")`.
+If ALL committed changes are `*.md`, `*.mdx`, `*.txt`, `*.yml`, `*.yaml`, `*.json`
+(excluding `package.json`), push, create the PR, and squash merge in one flow:
 
-The code-reviewer spawns 4 parallel subagents (Bug Hunter, Standards Checker, Context Reviewer, Performance Reviewer) using the full branch diff (`git diff origin/main...HEAD`). This gives genuine fresh-eyes review at GitHub's scope.
-
-Collect findings and categorise:
-- **Must Fix** — bugs, security issues, type errors
-- **Should Address** — CLAUDE.md violations
-- **Suggestions** — optional improvements
-
-Report: "Code review: N issues (M must-fix, K should-address, J suggestions)." — or "Code review: clean."
-
-## Stage 2 Auto-merge (docs-only fast path)
-
-Push, create PR, mark ready, and squash merge in one flow:
 ```bash
 git push -u origin HEAD
 gh pr create --title "<type>: <summary>" --body "<brief description>"
@@ -77,50 +71,109 @@ gh pr merge --squash --delete-branch
 
 Report: "Docs-only: auto-merged." and stop.
 
-## Stage 3: Fix Review Issues
+This is the one path that ships without a review artefact, and it can only be
+taken when there is nothing reviewable. Do not widen it. `*.yml` in that list is
+already generous — a workflow change is code.
 
-If no Must Fix or Should Address findings → **immediately proceed to Stage 4. Do not stop.**
+## Stage 2: Full Local Review
 
-Report the finding count as a single line ("Stage 3: N issues to fix (M must-fix, K should-address)") then **immediately begin fixing — do not stop or wait for user input.**
+Invoke:
 
-For each finding, create a task:
 ```
-TaskCreate: subject="Fix: <brief description>", activeForm="Fixing: <brief description>"
+Skill("code-reviewer")
 ```
 
-Then fix autonomously using the /tdd skill.
+in **`full` mode** — all six agents over the whole branch diff. Not a subset, not
+a sample. This is the branch's first review and the only one that sees it whole;
+every later round is scoped against this one.
 
-1. Mark task `in_progress`
-2. Work through **Must Fix** items first, then **Should Address**
-3. Follow Tidy First: structural commits (renames, extractions) before behavioural commits (logic changes)
-4. One logical change per commit with a conventional commit message
-5. Mark task `completed`
-6. Skip **Suggestions** unless the fix is a single line
+The review auto-fixes what it can, so those commits land *before* the PR exists
+and the PR opens with them already in. **Hold the artefact it emits** — the block
+beginning `<!-- local-review sha=... -->`. Stage 4 posts it.
 
-**If a finding requires architectural decisions** (multiple valid approaches, touches >3 files, unclear scope) → enter plan mode for that finding only, then resume.
+If the review's circuit breaker trips (not converging after 3 loops), continue to
+Stage 3 anyway. The artefact records the unresolved findings and the PR carries
+them where they can be seen; stopping here would leave the work stranded locally
+with no record at all.
 
-After all fixes, re-run `Skill("code-reviewer")` to confirm issues are resolved.
+**Do not stop here, and do not wait for the user.** Report the finding count as a
+single line and keep going. `code-reviewer` owns the fix loop and its circuit
+breaker — do not re-implement a second fix loop in this skill. Two loops in two
+places is how they drift apart, and the one that drifts is always the one nobody
+is reading.
 
-**Max 2 review iterations.** If Must Fix or Should Address findings remain after 2 passes, surface them to the user and stop — do not create a PR with unresolved issues.
+The exception is a finding needing an architectural decision (several valid
+approaches, or scope that is genuinely the user's call). Raise that one finding,
+then resume.
 
-Report: "Fixed N issues across M commits, review re-passed." — or "Stage 3 complete — no issues to fix."
+Report: "Review: 6 agents, N findings, N auto-fixed."
 
-## Stage 4: Create Draft PR
+## Why the local review posts to the PR
 
-Push the branch for the first time now that all checks have passed:
+This stage was **removed** on 28 Jul 2026 and is back only because the artefact
+exists. The removal reasons were never about review quality — the review was good.
+They were about observability, and all three still apply:
+
+- Whether it ran, and with how many agents, was visible only inside the Claude
+  Code session. Nothing downstream could observe it.
+- So it degraded silently. Across one PR series it went from six agents to three
+  to two to not being invoked at all, while every local gate still reported
+  success — because those gates recorded a *claim* that a review happened rather
+  than the review itself.
+- The person who decides to merge is looking at the PR, not at a terminal that
+  scrolled past hours ago. A review they never see cannot inform that decision.
+
+Stage 4 answers all three: the artefact is durable next to the merge button, it
+names its own agent count so a six-to-two reduction is visible and reasoned, and
+CI asserts it exists for the head sha. Degradation stops being invisible and
+becomes a red check.
+
+Which is why:
+
+- **The artefact IS the review, not a record that one happened.** Never substitute
+  a marker file, a receipt, a `.review-passed` stamp, or a "review: clean" line.
+  That distinction is the entire lesson of the removal — gates that recorded the
+  claim are exactly what failed.
+- **Never skip Stage 4 to save a step.** A review that ran and was not posted is,
+  from the merge button's point of view, a review that did not happen.
+- **CI's `claude-code-review.yml` still runs, and stays.** It is a second opinion
+  with fresh context, and it is the only review a PR gets when it did not come
+  through `/ship`. Two reviews is the intent, not redundancy to be optimised away.
+
+## Stage 3: Create the PR
+
+Push the branch now that lint, type-check and the review have passed:
 ```bash
 git push -u origin HEAD
 ```
 
 Call `Skill("create-pr")`.
 
-When providing context for the PR body, include:
-- A concise summary of the work done on this branch
-- If any issues were auto-fixed during stages 2–3, list them explicitly under an **"Auto-fixes applied during ship"** section so reviewers know what changed
+When providing context for the PR body, include a concise summary of the work
+done on this branch. Both reviews post their own findings separately — do not
+pre-empt or summarise them in the body.
 
 The PR must be created as a draft (`--draft` flag).
 
 Report: PR URL.
+
+## Stage 4: Post the Review Artefact
+
+Post the block held from Stage 2, verbatim:
+
+```bash
+gh pr comment <PR_NUMBER> --body-file -
+```
+
+Use `--body-file -` and pipe the body in. Passing it via `--body` mangles the
+`<!-- local-review ... -->` marker through shell quoting, and CI parses that
+marker — a mangled one reads as no review at all.
+
+Verify the comment landed (`gh pr view <PR> --json comments`) before continuing.
+This is the step the whole design rests on; a silent failure here reproduces the
+original problem exactly.
+
+Report: "Review artefact posted."
 
 ## Stage 5: PR Quality Gate
 
@@ -130,7 +183,9 @@ Immediately after Stage 4, invoke:
 Skill("pr-quality")
 ```
 
-This hands off to the autonomous review loop — no user input required. `pr-quality` will wait for the external CI code review, process it, fix all actionable issues, undraft the PR when clean, and poll CI until all checks pass. It will announce "READY TO MERGE" when done.
+This hands off to the autonomous loop — no user input required. `pr-quality` runs an incremental local review before each push, waits for the CI code review, processes both, fixes all actionable issues, undrafts the PR when clean, and watches CI until every check passes. It announces "READY TO MERGE" when done.
+
+Invoke the skill rather than hand-rolling the polling and printing the banner yourself. A hand-rolled finale is indistinguishable from a real one, which makes it impossible to tell afterwards which stages actually ran — the same failure that got the review stage removed above.
 
 Do not wait or report anything before invoking. The handoff is seamless.
 
@@ -141,18 +196,9 @@ Be concise. Report stage outcomes as single lines. Only expand when a stage fail
 ```
 Stage 0: Committed 3 files (feat: add meal search)
 Stage 1: Lint and typecheck passed
-Stage 2: Code review: 2 issues (1 must-fix, 1 should-address)
-Stage 3: Fixed 2 issues (null check + CLAUDE.md violation), review re-passed
-Stage 4: https://github.com/owner/repo/pull/42 (draft)
-Stage 5: → handing off to pr-quality
+Stage 2: Review: 6 agents, 4 findings, 3 auto-fixed
+Stage 3: https://github.com/owner/repo/pull/42
+Stage 4: Review artefact posted
+Stage 5: → handing off to pr-quality (CI review + checks)
 ```
 
-Clean path (no review issues):
-```
-Stage 0: Branch already clean.
-Stage 1: Lint and typecheck passed.
-Stage 2: Code review: clean.
-Stage 3: No issues to fix — proceeding.
-Stage 4: https://github.com/owner/repo/pull/42 (draft)
-Stage 5: → handing off to pr-quality
-```
