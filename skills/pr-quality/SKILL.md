@@ -1,19 +1,27 @@
 ---
 name: pr-quality
 description: >
-  Autonomous end-to-end PR quality gate. Waits for and processes Claude code
-  reviews in a loop, fixing all actionable issues and pushing after each round.
-  Once reviews are clean, undrafts the PR and loops on CI until all checks pass.
+  Autonomous end-to-end PR quality gate. Runs an incremental local review before
+  each push, then waits for and processes Claude code reviews in a loop, fixing
+  all actionable issues and posting a review artefact with every push.
+  Once reviews are clean, undrafts the PR and watches CI until all checks pass.
   Routes test failures via /skip-failed-test (1-3) or /test-fixer (4+).
   Announces "READY TO MERGE" in ASCII art. Zero user interruption.
-allowed-tools: Bash(git:*), Bash(gh:*), Bash(pnpm:*), Read, Grep, Glob, Task, Skill
+allowed-tools: Bash(git:*), Bash(gh:*), Bash(pnpm:*), Read, Grep, Glob, Task, Skill, Monitor, TaskStop
 ---
 
 # PR Quality Gate
 
-Autonomous fix-verify-push cycle. Waits for external code reviews, processes
-them, fixes all actionable issues, then undrafts and waits for CI to pass.
-Zero user interruption except ambiguous merge conflicts.
+Autonomous review-fix-verify-push cycle. Reviews each round's delta locally,
+waits for the CI review, processes both, fixes all actionable issues, then
+undrafts and waits for CI to pass. Zero user interruption except ambiguous merge
+conflicts.
+
+**Waiting is done with the `Monitor` tool, never an inline poll loop.** Foreground
+`sleep` is blocked in this harness, so "check every 30 seconds" written into the
+conversation cannot execute as described. Every monitor's filter must match
+failure states as well as success — a filter that only matches good news goes
+silent on a crash, and silence is indistinguishable from still-waiting.
 
 ## Delegation Rules (CRITICAL)
 
@@ -108,32 +116,82 @@ pnpm lint && pnpm type-check && pnpm vitest run
 All must pass before pushing. If they fail, fix first (delegation rules: 1-3 test failures → `/skip-failed-test` per file, 4+ → `/test-fixer`),
 then re-verify.
 
-**Step 3 — Push**
+**Step 2b — Incremental local review**
+
+Find the sha already reviewed, from the most recent review artefact on the PR:
+
+```bash
+LAST_REVIEWED=$(gh api --paginate --slurp "/repos/{owner}/{repo}/issues/$PR_NUMBER/comments?per_page=100" \
+  | jq -r '[add[]? | .body | capture("<!-- local-review sha=(?<sha>[0-9a-f]{40})") .sha] | last // empty')
+```
+
+If `LAST_REVIEWED` equals `HEAD`, skip this step — nothing new to review.
+
+Otherwise invoke `Skill("code-reviewer")` in **`incremental` mode** since
+`LAST_REVIEWED`. It selects its own agents by tier and escalates back to all six
+on its own rules — do not second-guess the selection or trim it further.
+
+If no artefact is found at all, run **`full`** mode. An unknown starting point is
+not a small delta; it is an unknown one.
+
+Auto-fixes commit as part of the review. Then re-run Step 2 (the fixes must pass
+lint/types/tests too) before pushing.
+
+**Step 3 — Push, then post the artefact**
 ```bash
 git push origin HEAD
 ```
 If nothing to push (remote already up to date), skip push but still enter
-Step 3 — a review may already be waiting.
+Step 4 — a review may already be waiting.
+
+Post the artefact from Step 2b, after the push so its sha matches what CI sees:
+
+```bash
+gh pr comment $PR_NUMBER --body-file -
+```
+
+**Every push carries its own artefact.** CI asserts that the head sha has been
+reviewed, so a push without one turns the PR red — correctly. Resist the urge to
+batch several rounds into one comment: the artefact's job is to say *which sha*
+was reviewed, and a comment covering three shas says it of none of them.
 
 Record `PUSH_TIME` immediately after push (or current time if skipped):
 ```bash
 PUSH_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 ```
 
-**Step 4 — Wait for review**
+**Step 4 — Wait for the CI review**
 
-Poll every 30 seconds until a code review appears on the PR submitted at or
-after `PUSH_TIME`:
-```bash
-gh pr view $PR_NUMBER --json reviews,comments
+Use the `Monitor` tool, not a polling loop in the conversation. Foreground `sleep`
+is blocked, so a "check every 30 seconds" loop written inline cannot actually run;
+`Monitor` is the mechanism that can.
+
+```
+Monitor({
+  description: "CI review on PR <N>",
+  persistent: true,
+  command: `
+    until out=$(gh api "/repos/{owner}/{repo}/issues/$PR_NUMBER/comments?since=$PUSH_TIME" \
+                 --jq '.[] | select(.user.login=="claude[bot]") | "review posted: \\(.html_url)"' 2>/dev/null) \
+          && [ -n "$out" ]; do
+      # Surface a failed review run too — a review that errored never posts,
+      # and waiting silently forever is indistinguishable from waiting normally.
+      gh run list --workflow=claude-code-review.yml --branch "$(git branch --show-current)" \
+        --limit 1 --json conclusion --jq '.[] | select(.conclusion=="failure") | "review run FAILED"'
+      sleep 30
+    done
+    echo "$out"
+  `,
+})
 ```
 
-Look for any new review (formal PR review) or comment submitted with
-`submittedAt >= PUSH_TIME`. No timeout — wait indefinitely. Do not ask the
-user for input.
+The failure branch is not optional. A monitor that matches only the success signal
+is silent through a crashed reviewer, and silence looks exactly like "still
+running" — which is how you end up waiting forever on a review that will never
+arrive. If the review run failed, read its log and proceed rather than waiting.
 
-On the very first iteration only: also accept any existing unprocessed review
-submitted before `PUSH_TIME` if no newer one appears within the first poll.
+On the very first iteration only: also accept an existing unprocessed review
+submitted before `PUSH_TIME`.
 
 **Step 4 — Process review**
 
@@ -212,16 +270,39 @@ This converts the PR to non-draft and triggers CI.
 
 Each iteration:
 
-**Step 1 — Poll CI**
-```bash
-gh pr view $PR_NUMBER --json statusCheckRollup,mergeable,mergeStateStatus
+**Step 1 — Watch CI**
+
+Use the `Monitor` tool. One event per check as it reaches a terminal state; the
+command exits on its own when nothing is pending, which ends the watch.
+
 ```
-Check every 30 seconds. If any checks are still `PENDING` or `IN_PROGRESS`,
-keep polling.
+Monitor({
+  description: "CI checks on PR <N>",
+  persistent: true,
+  command: `
+    prev=""
+    while true; do
+      s=$(gh pr checks $PR_NUMBER --json name,bucket 2>/dev/null) || { sleep 30; continue; }
+      cur=$(jq -r '.[] | select(.bucket!="pending") | "\\(.name): \\(.bucket)"' <<<"$s" | sort)
+      comm -13 <(echo "$prev") <(echo "$cur")
+      prev=$cur
+      jq -e 'all(.bucket!="pending")' <<<"$s" >/dev/null && break
+      sleep 30
+    done
+  `,
+})
+```
+
+This emits **every** terminal bucket — `fail` and `cancel` as well as `pass` — so
+a broken check announces itself instead of being absorbed into silence. Do not
+narrow the filter to passes.
+
+While it runs you are free to work; events arrive as notifications. Do not
+re-invoke `gh pr checks` in a loop alongside it.
 
 **Step 1a — Stuck detection (CRITICAL)**
 
-Before continuing to poll, check for merge conflicts blocking CI:
+Check once before arming the monitor, and again if it produces no events:
 
 ```bash
 gh pr view $PR_NUMBER --json mergeable,mergeStateStatus
@@ -229,8 +310,8 @@ gh pr view $PR_NUMBER --json mergeable,mergeStateStatus
 
 If `mergeStateStatus` is `DIRTY` or `mergeable` is `CONFLICTING`:
 - **This is why CI is stuck** — GitHub Actions will not run on a conflicting branch
-- Immediately jump back to **Stage 1** (Resolve Conflicts) and rebase
-- Do NOT continue polling
+- `TaskStop` the monitor, jump back to **Stage 1** (Resolve Conflicts) and rebase
+- Do NOT leave the monitor armed against a branch that will never produce checks
 
 If checks have been exclusively `PENDING`/`QUEUED` (no runs have started) for
 more than 5 minutes, **always** run this conflict check — stuck queues with zero
@@ -246,7 +327,16 @@ runs executing are the canonical symptom of an unresolved merge conflict.
   - Build error → fix directly (or stop and report if root cause is unclear)
 
   After fixing: verify locally (`pnpm lint && pnpm type-check && pnpm vitest run`),
-  push, then go back to Step 1. **Do NOT wait for a code review in this phase.**
+  then **run Stage 2's Step 2b and Step 3** — incremental review, push, post the
+  artefact — and go back to Step 1.
+
+  **Do NOT wait for the CI code review in this phase.** That is the only thing
+  skipped here. The local review is not: CI asserts the head sha has been
+  reviewed, so a fix pushed without an artefact turns the PR red and the loop
+  never converges. These deltas are tiny — a lint fix selects Tier A alone, two
+  agents — so the cost is small and the invariant stays absolute: **every sha
+  that reaches CI has been locally reviewed.** An invariant with one exception is
+  an invariant nobody can rely on.
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "name": "claude-skills",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "General-purpose Claude Code skills and agents — TDD, code review, shipping, testing, docs, and project hygiene",
   "author": {
     "name": "drdanmaggs"
