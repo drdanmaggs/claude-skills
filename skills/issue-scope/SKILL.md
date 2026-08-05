@@ -4,12 +4,16 @@ disable-model-invocation: false
 description: >
   Brainstorm features into scoped implementation plans with test decomposition.
   Socratic questioning, codebase exploration, and Sequential Thinking produce
-  a plan file compatible with /tdd. Invoke explicitly with /issue-scope.
+  a plan file compatible with /tdd. When the work is too big for one plan, an
+  INVEST/SPIDR gate splits it into a GitHub epic with linked child issues and a
+  derived dependency graph. Invoke explicitly with /issue-scope.
 ---
 
 # Issue Scope
 
 Brainstorm → Explore → Question → Approach → Decompose → Plan. Produces a `docs/plans/YYYY-MM-DD-<feature>.md` that `/tdd` consumes directly.
+
+When the work turns out to be too big for one plan, **Phase 5.5** splits it into a GitHub epic with linked child issues instead of producing a plan nobody can execute.
 
 Inspired by [Superpowers](https://github.com/obra/superpowers) methodology: plans should be "clear enough for an enthusiastic junior engineer with poor taste and no judgement" to execute.
 
@@ -64,7 +68,15 @@ Then use **AskUserQuestion**: "Does this match your understanding of the landsca
 |------|--------|--------|
 | **Small** | 1-2 files, well-understood pattern | Proceed normally |
 | **Medium** | 3-5 files, clear integration points | Proceed normally |
-| **Large** | 6+ files, cross-cutting, or unfamiliar domain | Suggest splitting into sub-issues before proceeding |
+| **Large** | 6+ files, cross-cutting, or unfamiliar domain | Proceed, but re-check at Phase 5 |
+
+This table is a rough read on volume, and volume is **not** what makes something
+an epic — a 12-file rename isn't one, a 3-file feature spanning two unshipped
+capabilities is. If the feature looks like it covers 2+ independently shippable
+capabilities, apply the INVEST gate in
+[references/splitting-framework.md](references/splitting-framework.md) now and go
+to **Phase 5.5** if it fails on Small alone. Otherwise carry on — the honest call
+usually comes after decomposition, when you can see what the work actually is.
 
 **Spike detection:** If Explore reveals significant unknowns (unfamiliar library, unclear DB design, undocumented external API), offer a **spike plan** instead of a full plan:
 
@@ -78,6 +90,10 @@ Output: Findings that unblock full scoping
 ```
 
 If user accepts the spike, write it to `docs/plans/YYYY-MM-DD-spike-<topic>.md` and end. If user says "I know enough, proceed anyway", continue to Phase 3.
+
+This is the **INVEST-Estimable** route, and it is SPIDR's `S`. A feature you
+can't size isn't an epic — splitting it just produces several features you can't
+size. Spike first, then re-scope.
 
 ---
 
@@ -149,7 +165,7 @@ Each slice = one RED-GREEN-REFACTOR cycle in TDD. Slices build on each other.
 **Slice design rules:**
 - Each delivers testable value (not "set up infrastructure")
 - Vertical: touches all layers needed (DB → logic → API → UI) — not horizontal layers
-- 3-7 slices typical. If >7, the feature needs splitting into separate issues.
+- 3-7 slices typical. If >7, **stop and go to Phase 5.5** — that's a prompt to run the INVEST gate, not a verdict. The slices you just produced are the raw material for the split, not wasted work.
 - First slice is the smallest thing that proves the core works
 - Last slice handles edge cases and polish
 
@@ -183,6 +199,47 @@ Slice 3: [API endpoint]
 ```
 
 **Wait for approval.** User may reorder, split, merge, or drop slices.
+
+---
+
+## Phase 5.5: Epic Escape Hatch
+
+Reached from Phase 2 (2+ independently shippable capabilities) or Phase 5 (>7
+slices). Neither is a verdict — both are prompts to run the gate.
+
+**1. Run the INVEST gate** — [references/splitting-framework.md](references/splitting-framework.md) §1.
+
+The rule that decides it: **fails on anything other than Small → fix that first,
+don't split. Fails on Small alone → split.** An unclear feature split into five
+becomes five unclear features. Failing on Estimable means spike (Phase 2), not
+epic; failing on Valuable or Testable means back to Phase 3.
+
+**2. Spawn `epic-splitter`** (`subagent_type: epic-splitter`, model opus) with:
+
+- the **absolute path** to `references/splitting-framework.md` — resolve it from
+  this skill's own location. The agent runs inside the user's project, where a
+  path relative to this repo means nothing, and it will stop rather than guess
+  at the criteria.
+- the approved decomposition from Phase 5
+- the Phase 2 exploration findings
+- the project repo path
+
+By this point your own context is saturated with the brainstorm, which biases
+toward "these slices are basically fine". The agent reads cold, works out the
+children and the cut lines, and derives the dependency graph with evidence for
+every edge. It is allowed to come back with **"not an epic"** — that is a real
+answer, take it.
+
+**3. Follow [references/epic-split.md](references/epic-split.md)** — present the
+verdict, get approval, create the epic and children via `issue-labeller`, link
+them via `github-issue-relationships`, and **verify the links took**
+(`addSubIssue` fails silently without its header).
+
+Then hand back with the ready-now children and offer `/issue-scope <child>`.
+
+**Phase 5.5 ends the run — do not continue to Phase 6.** The epic and its
+children are the deliverable. Children are scoped individually when picked up, so
+no plan file is written here, for the epic or for any child.
 
 ---
 
@@ -243,3 +300,5 @@ Builds on: Slice 1
 - **Challenge scope creep.** If a slice has >5 tests, it probably needs splitting.
 - **Respect existing patterns.** Explore findings override theoretical "best practices."
 - **Trade-offs are explicit.** The user makes architectural decisions, not the AI.
+- **Never produce a plan you know is too big.** An 11-slice plan is not a plan, it's a backlog with no issue numbers. Go to Phase 5.5 — the thinking is kept, not thrown away.
+- **An epic is not the answer to "unclear".** It's the answer to "clear but too big". The INVEST gate is what tells the two apart; don't skip it because the feature obviously feels large.
