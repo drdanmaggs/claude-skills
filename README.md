@@ -56,7 +56,7 @@ are reported.
 
 | Skill | What it does |
 |---|---|
-| `issue-scope` | Turns vague features into scoped plans with test decomposition; splits epic-sized work into linked child issues via an INVEST/SPIDR gate |
+| `issue-scope` | Turns vague features into scoped plans with test decomposition and an ADR where warranted; splits epic-sized work into linked child issues via an INVEST/SPIDR gate |
 | `issue-triage` | Evaluates a backlog against the real codebase; drops what's stale |
 | `issue-labeller` | One type label per issue, optional areas, no priority; retrofits and consolidates |
 | `github-issue-relationships` | Blocked-by/blocking links and epic hierarchies |

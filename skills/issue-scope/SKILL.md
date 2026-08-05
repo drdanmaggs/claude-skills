@@ -4,9 +4,10 @@ disable-model-invocation: false
 description: >
   Brainstorm features into scoped implementation plans with test decomposition.
   Socratic questioning, codebase exploration, and Sequential Thinking produce
-  a plan file compatible with /tdd. When the work is too big for one plan, an
-  INVEST/SPIDR gate splits it into a GitHub epic with linked child issues and a
-  derived dependency graph. Invoke explicitly with /issue-scope.
+  a plan file compatible with /tdd, plus an ADR when the architectural decision
+  warrants recording. When the work is too big for one plan, an INVEST/SPIDR gate
+  splits it into a GitHub epic with linked child issues and a derived dependency
+  graph. Invoke explicitly with /issue-scope.
 ---
 
 # Issue Scope
@@ -42,6 +43,7 @@ Find:
 - Dependencies and integration points
 - Similar features/tests to use as templates
 - Database schema if relevant (use Supabase MCP)
+- **Existing ADRs** — does the repo have `docs/adr/` (or `docs/decisions/`, `doc/adr/`)? Which existing ADRs constrain this feature, and would any be superseded by it?
 
 **Also discover session constants** (carried into the plan for TDD):
 
@@ -59,6 +61,7 @@ After exploration, present a curated findings summary to the user:
 - Key files and modules discovered
 - Existing patterns that apply
 - Session constants found
+- ADR convention (path and numbering), plus any existing ADRs this feature touches
 
 Then use **AskUserQuestion**: "Does this match your understanding of the landscape? Anything I missed?"
 
@@ -152,7 +155,43 @@ Present in a clear format:
 
 **Wait for user to choose.** If they want a hybrid, clarify what that means concretely.
 
-If there's genuinely only one sensible approach, say so and skip to Phase 5.
+If there's genuinely only one sensible approach, say so — but still run the ADR check below before Phase 5.
+
+### ADR check (always run)
+
+Once the approach is settled, **explicitly decide whether this decision warrants an ADR.** Run this every time, including when there was only one viable approach and when the feature felt small. Decisions with long half-lives are cheap to make and expensive to reconstruct — that asymmetry is the whole reason to check.
+
+**An ADR is warranted when any of these hold:**
+- **Hard to reverse** — schema shape, source of truth, data ownership, auth model, public contract
+- **Sets a precedent** future work will copy without re-deciding
+- **A credible alternative was rejected** for reasons that won't be visible in the code
+- **It constrains or supersedes an existing ADR** (Explore should have surfaced these)
+- **Cross-cutting** — CI, test isolation, ports, deployment topology, external providers
+- **Someone will ask "why is it like this?"** in six months and the code won't answer
+
+**Skip the ADR when:**
+- The choice just follows a pattern Explore already found
+- It's local to one module and cheap to reverse
+- It's a library/API usage detail the code makes self-evident
+- An existing ADR already covers it — link that ADR from the plan instead
+
+**Then use AskUserQuestion, leading with a recommendation:**
+
+> "This decision [is / isn't] ADR-worthy because [reason]. What do you want?"
+> — Write ADR-NNN alongside the plan | Extend/supersede existing ADR-NNN | No ADR
+
+**The user decides** — same rule as approach selection. Record the outcome *either way* in the plan's Architecture section, including "no ADR, because [reason]", so the next session doesn't re-litigate it.
+
+**If the repo has no ADR directory:** don't silently create one. Ask. A single local decision doesn't justify inventing a convention; the first genuinely cross-cutting one does.
+
+**Numbering:** next number = highest existing + 1, but check for in-flight ADRs on other branches before claiming it:
+
+```bash
+git log --all --diff-filter=A --pretty=format: --name-only -- docs/adr \
+  | grep -oE 'docs/adr/[0-9]+' | sort -u | tail -5
+```
+
+This finds ADRs added on *any* branch, not just the ones present in your working tree. Parallel worktrees each claiming "the next number" from `ls docs/adr` is how duplicate ADR numbers happen.
 
 ---
 
@@ -235,6 +274,14 @@ verdict, get approval, create the epic and children via `issue-labeller`, link
 them via `github-issue-relationships`, and **verify the links took**
 (`addSubIssue` fails silently without its header).
 
+**4. Carry the Phase 4 ADR verdict onto the epic.** No plan file is written here,
+so the verdict has nowhere else to land — and epic-sized work is the most
+ADR-worthy case there is, since every child inherits the decision without
+re-deciding it. If the check said write one, write it now (`docs/adr/NNN-<slug>.md`,
+format in Phase 6) and link it from the epic body. If it said no, record that and
+why in the epic body. Either way the ADR belongs to the **epic**, not to any one
+child.
+
 Then hand back with the ready-now children and offer `/issue-scope <child>`.
 
 **Phase 5.5 ends the run — do not continue to Phase 6.** The epic and its
@@ -262,6 +309,8 @@ Use today's date. Slugify the feature name (lowercase, hyphens).
 ## Architecture
 [2-3 sentences: chosen approach, key decisions made during brainstorming]
 
+**Decision record:** [ADR-NNN](../adr/NNN-slug.md) — or "None: [why this decision doesn't need one]"
+
 ## Session Constants
 Test command: [from explore]
 Test file pattern: [from explore]
@@ -284,9 +333,36 @@ Builds on: Slice 1
 - [ ] test description 2
 ```
 
+**If the ADR check approved one, write it too** — `docs/adr/NNN-<slug>.md`, matching the repo's existing ADR format. If there is no existing format, use:
+
+```markdown
+# ADR NNN: [decision, stated as a decision not a topic]
+
+**Status:** Proposed
+**Date:** YYYY-MM-DD
+**Issue:** [#N](issue url) — if one exists
+**Supersedes:** [ADR NNN](./NNN-slug.md) — if applicable
+
+## Context
+[The forces in play. What was true before, what problem it caused. Include the
+Explore findings that constrained the choice.]
+
+## Decision
+[What we're doing, in the active voice.]
+
+## Consequences
+[What this makes easy, what it makes hard, what now has to be maintained.]
+
+## Alternatives considered
+[The approaches from Phase 4 that lost, and *why* — this is the part the code
+can't tell you later.]
+```
+
+Status stays **Proposed** until the implementing PR merges, then flips to **Accepted**. Write it now rather than after implementation: the reasoning is freshest here, and it's the input `/tdd` needs, not an artefact of it.
+
 **After writing the plan:**
 
-1. Show the file path to the user
+1. Show the file path(s) to the user — plan, and ADR if written
 2. Offer handoff: "Ready to start TDD? I can invoke `/tdd` which will pick up this plan."
 3. If user says yes, invoke `/tdd` via Skill tool
 4. If user says no, end gracefully — plan is saved for later
@@ -302,3 +378,4 @@ Builds on: Slice 1
 - **Trade-offs are explicit.** The user makes architectural decisions, not the AI.
 - **Never produce a plan you know is too big.** An 11-slice plan is not a plan, it's a backlog with no issue numbers. Go to Phase 5.5 — the thinking is kept, not thrown away.
 - **An epic is not the answer to "unclear".** It's the answer to "clear but too big". The INVEST gate is what tells the two apart; don't skip it because the feature obviously feels large.
+- **Always run the ADR check.** Every run reaches a verdict — "ADR-NNN" or "no ADR, because…" — recorded in the plan or the epic. Silently not considering it is the failure mode; deciding against one is fine.
