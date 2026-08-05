@@ -1,13 +1,30 @@
 ---
 name: code-reviewer
 description:
-  Use this skill to review code. It supports both local changes (staged or working tree) and remote Pull Requests (by ID or URL). It focuses on correctness, maintainability, and adherence to project standards. Uses parallel review agents with a validation pass to deliver high-signal findings only.
-allowed-tools: Read Grep Glob Task Bash(git diff:*) Bash(git log:*) Bash(git status:*) Bash(git rev-parse:*) Bash(gh pr checkout:*) Bash(gh pr view:*) Bash(gh api:*) Bash(gh issue view:*) Bash(git add:*) Bash(git commit:*)
+  Use this skill to review code. It supports both local changes (staged or working tree) and remote Pull Requests (by ID or URL). It focuses on correctness, maintainability, and adherence to project standards. Uses parallel review agents with a validation pass to deliver high-signal findings only. Runs all six agents by default; callers can request an incremental round scoped to a since-sha. Emits a postable artefact recording which agents ran and why any were skipped.
+allowed-tools: Read Grep Glob Task Bash(git diff:*) Bash(git log:*) Bash(git status:*) Bash(git rev-parse:*) Bash(git merge-base:*) Bash(gh pr checkout:*) Bash(gh pr view:*) Bash(gh api:*) Bash(gh issue view:*) Bash(git add:*) Bash(git commit:*)
 ---
 
 # Code Reviewer
 
 Orchestrate a multi-agent code review with auto-fix. Focus on what automated tools (lint, types, build) can't catch. HIGH SIGNAL ONLY — false positives erode trust.
+
+## Invocation Modes
+
+Two modes. **Default to `full` whenever the caller does not say otherwise** — a
+missing mode is not an invitation to guess something cheaper.
+
+| Mode | Scope | Agents |
+|---|---|---|
+| `full` | `git diff origin/main...HEAD` | all 6 |
+| `incremental <since-sha>` | `git diff <since-sha>...HEAD` | selected by the tier rules below |
+
+`full` is for the first review of a branch and for any round where escalation
+fires. `incremental` is for later rounds, once an earlier round has already
+covered everything up to `<since-sha>`.
+
+Whichever mode runs, the uncommitted-changes handling in Step 1 still applies on
+top of it.
 
 ## Step 1: Gather Context
 
@@ -22,11 +39,19 @@ gh pr view <PR_NUMBER> --json title,body,files
 git status --porcelain
 ```
 
-- **Non-empty output** → `HAS_UNCOMMITTED=true`. Agents must run all three: `git diff` (unstaged) + `git diff --cached` (staged) + `git diff origin/main...HEAD` (committed).
-- **Empty output** → `HAS_UNCOMMITTED=false`. Agents run `git diff origin/main...HEAD` only.
+Let `BASE_DIFF` be `git diff origin/main...HEAD` in `full` mode, or
+`git diff <since-sha>...HEAD` in `incremental` mode.
+
+- **Non-empty output** → `HAS_UNCOMMITTED=true`. Agents must run all three: `git diff` (unstaged) + `git diff --cached` (staged) + `BASE_DIFF` (committed).
+- **Empty output** → `HAS_UNCOMMITTED=false`. Agents run `BASE_DIFF` only.
 
 **Quick bail** — if ALL changed files match these patterns, report "No code to review" and stop:
 - `*.md`, `*.mdx`, `*.json` (unless package.json deps changed), `*.lock`, `*.lockb`, `*.yml`, `*.yaml`
+
+Bailing is a legitimate outcome, but it is never silent: still emit the artefact
+(Step 7) recording the round as skipped **and why**. A round that produced no
+review and left no trace is indistinguishable from a round that never ran, which
+is the failure this whole design exists to prevent.
 
 **Discover CLAUDE.md files** — find CLAUDE.md in the repo root and every directory containing a modified file. Pass paths to the Standards Checker agent.
 
@@ -64,13 +89,44 @@ previous_findings_count = Infinity
 
 ---
 
-## Step 2: Parallel Review — Launch 6 Agents
+## Step 2: Select Agents
 
-Launch all 6 agents simultaneously. Each agent runs its own git commands — do not pass diff text directly.
+**`full` mode → all 6. Skip the rest of this step.**
+
+**`incremental` mode** — measure the delta, counting **non-test source files** only
+(exclude `*.test.*`, `*.spec.*`, `*_test.*`, `__tests__/`, `tests/`, and the quick-bail
+patterns above):
+
+| Tier | Agents | Runs when |
+|---|---|---|
+| A | Bug Hunter, Standards Checker | always |
+| B | Context Reviewer, Test Coverage Reviewer | any non-test source file in the delta |
+| C | Performance Reviewer, Quality Reviewer | delta ≥ 50 changed lines **or** ≥ 5 files |
+
+**Escalate to `full` — all 6, over `origin/main...HEAD` — if ANY of:**
+- the previous round produced a validated finding with category `bug` or `security`
+- the delta touches ≥ 15 files
+- no `<since-sha>` could be established, or it is not an ancestor of `HEAD`
+
+Escalation is deliberately asymmetric: cheap to trigger, and it always widens the
+review rather than narrowing it. When in doubt about which tier applies, run the
+larger set.
+
+**These are rules, not judgment, on purpose.** A rule can be written into the
+artefact and checked afterwards. This stage was removed from `/ship` once because
+it silently drifted from six agents to three to two to never running, and nothing
+downstream could tell. A reduced round is fine — an *unexplained* one is not. Every
+agent not run must appear in the artefact by name with the rule that excluded it.
+
+## Step 2b: Parallel Review — Launch the Selected Agents
+
+Launch the selected agents simultaneously. Each agent runs its own git commands — do not pass diff text directly.
 
 **Diff instruction to include in each agent prompt:**
-- `HAS_UNCOMMITTED=true`: "Run `git diff` for unstaged changes, `git diff --cached` for staged changes, and `git diff origin/main...HEAD` for committed changes. Review all three."
-- `HAS_UNCOMMITTED=false`: "Run `git diff origin/main...HEAD` to see the changes."
+- `HAS_UNCOMMITTED=true`: "Run `git diff` for unstaged changes, `git diff --cached` for staged changes, and `BASE_DIFF` for committed changes. Review all three."
+- `HAS_UNCOMMITTED=false`: "Run `BASE_DIFF` to see the changes."
+
+(Substitute the literal command `BASE_DIFF` resolves to for this round.)
 
 Prepend `CHANGE_CONTEXT` to every agent prompt before the diff instruction.
 
@@ -120,7 +176,7 @@ Prompt: `[CHANGE_CONTEXT]` `[diff instruction]` Focus only on introduced code (+
 
 ## Step 3: Validate Findings (Disprove-First)
 
-If all 6 returned `NO_ISSUES_FOUND`, skip to Step 6.
+If every agent returned `NO_ISSUES_FOUND`, skip to Step 6.
 
 For each finding with confidence >= 60, launch a validation agent in parallel (up to 8 concurrent):
 
@@ -235,56 +291,57 @@ previous_findings_count = findings_count
 ```
 Go back to Step 2 with fresh agents and fresh context. Each loop gets clean agent instances — no carried-over state.
 
+**Internal loops re-review incrementally.** Round 1 of an invocation is whatever
+mode the caller asked for; rounds 2+ run `incremental` since the sha reviewed at
+the start of the previous round, under the same Step 2 tier and escalation rules.
+So "full first, intelligent after" holds within a single invocation as well as
+across `pr-quality` rounds — and the escalation trigger means a round that found a
+bug widens the next one back to all 6 rather than narrowing it.
+
 ---
 
-## Step 6: Final Report
+## Step 6: Emit the Artefact
 
-```
-## Code Review
+**One output, always.** It is both the report shown to the user and the body a
+caller posts to the PR. There is no separate short form — a divergent "summary"
+version is how the detail that makes degradation visible gets lost.
+
+```markdown
+<!-- local-review sha=<full 40-char HEAD sha> round=<n> agents=<ran>/6 -->
+## Local review — round <n>
+
+**Scope:** `<base>...<head>` (<full branch diff | delta since round n-1>) · <N> files, <N> lines
+**Agents (<ran>/6):** <names of agents that ran>
+**Not run:** <names> — <the rule that excluded them, e.g. "delta below Tier C (41 lines, 3 files)">
+
 [⚠ Includes uncommitted changes — only if HAS_UNCOMMITTED=true]
 
-### Must Fix
+### Must fix
 [Validated bugs and security issues that could not be auto-fixed — file:line, what's wrong, concrete fix]
 
-### Should Address
+### Should address
 [Validated standards violations and test anti-patterns that could not be auto-fixed — file:line, quoted rule, fix]
 
-### Auto-Fixed
-[Summary of fixes applied during review]
+### Auto-fixed
+[Fixes applied during this review — N bugs via TDD, N structural]
 
-### Positive Observations
+### Positive observations
 [What's done well — reinforce good patterns]
 
-Review loops: N (X findings → Y findings → ...)
-Auto-fixed: N findings (N bugs via TDD, N structural)
-Reviewed by: Bug Hunter, Standards Checker, Context Reviewer, Performance Reviewer, Test Coverage Reviewer, Quality Reviewer
-Findings validated: X of Y passed validation
+Findings validated: X of Y · Review loops: N (X findings → Y → …)
 ```
 
-If clean after auto-fix:
-```
-## Code Review
-[⚠ Includes uncommitted changes — only if HAS_UNCOMMITTED=true]
+Rules for the marker line — the CI assertion parses it, so these are load-bearing:
 
-No issues remaining. Checked for bugs, security, performance, test coverage, code quality, and CLAUDE.md compliance.
+- **`sha` must be the full 40-character HEAD sha at review time**, not short, not a branch name. The assertion keys on it for the same reason `assert-review-posted.sh` keys on a `SINCE` stamp: without it one stale review satisfies every later push, and the guard passes forever after a single success — worse than no guard, because it still looks like one.
+- **`agents=<ran>/6` must be the real count.** If it disagrees with the `Agents:` line, the artefact is lying and the whole mechanism is void.
+- **Omit no section by silence.** `Not run: none` when all 6 ran. `Auto-fixed: none` when nothing was fixed.
 
-Review loops: N (X findings → 0)
-Auto-fixed: N findings (N bugs via TDD, N structural)
-Reviewed by: Bug Hunter, Standards Checker, Context Reviewer, Performance Reviewer, Test Coverage Reviewer, Quality Reviewer
-```
+Section variants:
 
-If loop hit circuit breaker:
-```
-## Code Review
-
-Review loops: N (stopped — not converging)
-Auto-fixed: N findings
-Remaining findings:
-- [file:line — description]
-- [file:line — description]
-
-Reviewed by: Bug Hunter, Standards Checker, Context Reviewer, Performance Reviewer, Test Coverage Reviewer, Quality Reviewer
-```
+- **Clean** — keep every heading, write "No issues remaining." under Must fix. Do not collapse the artefact.
+- **Circuit breaker hit** — add `**Stopped:** not converging after N loops` under the Agents lines, and list remaining findings under Must fix.
+- **Quick bail** (docs/config-only) — emit the header, marker, and `**Skipped:** no reviewable code in scope — all changed files are docs/config`. The marker still carries the real sha, because the round genuinely covered that sha.
 
 ---
 
