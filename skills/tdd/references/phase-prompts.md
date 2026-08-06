@@ -8,19 +8,40 @@ Lean "phase brief" templates. The orchestrator fills in the `{variables}` and sp
 
 ## Session Constants
 
-Discovered once during Setup (Stage 0a) and reused in every phase brief:
+Discovered once during Setup and written by the orchestrator to **`.tdd-session.md`** at the repo root, before the first spawn:
+
+The file is a plain markdown table. This is its exact shape — the orchestrator
+fills the right column with discovered values:
+
+```markdown
+| Constant | Value |
+|----------|-------|
+| Plan file | docs/plans/2026-02-07-category-search.md |
+| Test command | pnpm vitest run --reporter=verbose --bail 1 |
+| Test file pattern | colocated *.test.ts |
+| Test helpers | tests/helpers/isolated-test-household.ts |
+| Standards file | /abs/path/to/plugins/cache/claude-skills/claude-skills/<version>/skills/tdd/references/test-standards.md |
+| E2E test command | pnpm playwright test |
+| E2E test directory | tests/e2e/ |
+| Auth fixture | tests/e2e/fixtures/auth-fixture.ts |
+| Acceptance test path | tests/e2e/feature.spec.ts |
+```
+
+`Acceptance test path` is appended after Stage 0f — `none` when the feature has no
+user-facing behaviour. Every other row is written in one go, before the first spawn.
+
+**Briefs point at the file; they do not re-paste it.** Every template below opens with
 
 ```
-Plan file: {plan_file_path}            # e.g., "docs/plans/2026-02-07-category-search.md"
-Test command: {test_command}           # e.g., "pnpm vitest run --reporter=verbose"
-Test file pattern: {test_pattern}       # e.g., "colocated *.test.ts" or "tests/__tests__/"
-Test helpers: {helper_paths}            # e.g., "tests/helpers/isolated-test-household.ts"
-Standards file: {standards_path}        # this skill's bundled references/test-standards.md (absolute path resolved in Stage 0)
-E2E test command: {e2e_test_command}   # e.g., "pnpm playwright test"
-E2E test directory: {e2e_test_dir}     # e.g., "tests/e2e/"
-Auth fixture: {auth_fixture_path}      # e.g., "tests/e2e/fixtures/auth-fixture.ts"
-Acceptance test path: {acceptance_test_path}  # Set after Stage 0f. Empty if non-user-facing.
+Session constants: .tdd-session.md   # read this first
 ```
+
+and the subagent reads its own values from there. Two reasons, and both have bitten:
+
+1. **Compaction garbles re-pasted paths.** The standards path carries the plugin version and is long; a mangled one makes the file unreadable and the subagent silently skips the project's test standards.
+2. **One copy, one truth.** Re-pasting nine values into five templates is five places for them to drift, and the drift is invisible until a subagent acts on a stale value.
+
+Values still appear in the templates below as `{placeholders}` where the brief genuinely narrows scope for *this* spawn — the test description, the file list, the mode. Those are per-spawn arguments, not session constants.
 
 ---
 
@@ -233,12 +254,9 @@ Task tool:
   description: "ACCEPTANCE TEST: {feature_name}"
   prompt: |
     Mode: acceptance
+    Session constants: .tdd-session.md   # read this first — E2E command, E2E dir, auth fixture, standards path
     Feature: {feature_name}
     Plan file: {plan_file_path}
-    E2E test command: {e2e_test_command}
-    E2E test directory: {e2e_test_dir}
-    Auth fixture: {auth_fixture_path}
-    Standards file: {standards_path}
     Write test to: {e2e_test_dir}/{feature-slug}.spec.ts
 
     Read the plan's Context and Architecture sections.
@@ -252,7 +270,7 @@ Task tool:
 ### Post-0f (Orchestrator)
 
 1. Verify test FAILS for expected reason (not syntax error)
-2. Record `Acceptance test path` in session constants
+2. Append `Acceptance test path` to `.tdd-session.md` (`none` if 0f was skipped)
 3. Commit: `test: add acceptance test for {feature_name}`
 4. **Do NOT run this test again during inner loop cycles** — only run at outer loop exit
 5. Proceed to inner loop (Stage 1: TIDY FIRST)
@@ -272,9 +290,9 @@ Task tool:
   description: "PREP: {next_test_description}"
   prompt: |
     Mode: PREP
+    Session constants: .tdd-session.md   # read this first
     Feature: {feature_name}
     Next test: {next_test_description}
-    Test command: {test_command}
     Files to read: {impl_file_paths}
 ````
 
@@ -300,12 +318,12 @@ Task tool:
   description: "RED: {test_description}"
   prompt: |
     Mode: unit/integration  # Always "unit/integration" in inner loop. Acceptance test was written once in Stage 0f.
+    Session constants: .tdd-session.md   # read this first — test command, helpers, standards path
     Feature: {feature_name}
     Slice: {slice_number} — {slice_description}
     Test type: {unit|integration|e2e|pgtap}
-    Test command: {test_command}
     Your test: "{next_unchecked_test_description}"
-    Files to read: {plan_file_path}, {standards_path}, {existing_test_files}, {test_helpers}, {source_files}
+    Files to read: {plan_file_path}, {existing_test_files}, {source_files}
     Already tested: {checked_list or "Nothing yet — this is the first test"}
 ```
 
@@ -349,8 +367,8 @@ Task tool:
   model: "haiku"
   description: "GREEN: {test_description}"
   prompt: |
+    Session constants: .tdd-session.md   # read this first
     Feature: {feature_name}
-    Test command: {test_command}
     Failing test: {test_file_path}
     Failure: {one_line_failure_summary}
     Files to read: {test_file_path}, {source_files}, {plan_file_path} (read-only)
@@ -369,8 +387,8 @@ Task tool:
   description: "REFACTOR: {feature_name}"
   prompt: |
     Mode: REFACTOR
+    Session constants: .tdd-session.md   # read this first
     Feature: {feature_name}
-    Test command: {test_command}
     Files to read: {test_file_paths}, {impl_file_paths}
 ````
 
