@@ -306,6 +306,10 @@ bug widens the next one back to all 6 rather than narrowing it.
 caller posts to the PR. There is no separate short form — a divergent "summary"
 version is how the detail that makes degradation visible gets lost.
 
+It is emitted to the conversation **and** written to `.local-review.md` — see
+[Write it to `.local-review.md`](#write-it-to-local-reviewmd) below. Both, every
+time. The file is what callers post; the conversation copy is what you read.
+
 ```markdown
 <!-- local-review sha=<full 40-char HEAD sha> round=<n> agents=<ran>/6 -->
 ## Local review — round <n>
@@ -342,6 +346,38 @@ Section variants:
 - **Clean** — keep every heading, write "No issues remaining." under Must fix. Do not collapse the artefact.
 - **Circuit breaker hit** — add `**Stopped:** not converging after N loops` under the Agents lines, and list remaining findings under Must fix.
 - **Quick bail** (docs/config-only) — emit the header, marker, and `**Skipped:** no reviewable code in scope — all changed files are docs/config`. The marker still carries the real sha, because the round genuinely covered that sha.
+
+### Write it to `.local-review.md`
+
+Write the artefact — the whole block, starting at the `<!-- local-review sha=… -->`
+marker — to **`.local-review.md`** at the repo root, with the Write tool,
+overwriting whatever was there. Then ensure it is gitignored:
+
+```bash
+grep -qxF '.local-review.md' .gitignore 2>/dev/null || printf '%s\n' '.local-review.md' >> .gitignore
+```
+
+**Byte-identical to what you emitted.** Not a summary of it, not a re-rendering of
+it, not "the same thing but tidier for the file". One artefact with two
+destinations. If the two ever differ, the one the merge button sees is the file,
+and you have just made the conversation copy a lie.
+
+**This skill is the writer, not its callers.** `code-reviewer` is invoked by
+`/ship`, by `pr-quality`, and directly by the user. Writing at emission means all
+three get it for free and none of them can forget; writing at receipt means three
+implementations that drift.
+
+**Why a file at all.** The artefact is the most compaction-fragile object in the
+chain — `/ship` used to carry it through two more stages in conversation before
+posting it, and this skill already says a mangled marker reads as no review at
+all. A file survives `/compact`, `/clear`, and a cold restart; a held block does
+not.
+
+Note the asymmetry with `.tdd-phase` and `.tdd-session.md`, which `/tdd` deletes at
+Completion: **`.local-review.md` is not torn down here.** The caller still has to
+post it, and that may happen after a `/clear`. It is overwritten by the next
+review, which is the only lifecycle it needs. Callers guard against a stale one by
+checking the `sha=` marker, never by assuming freshness.
 
 ---
 
