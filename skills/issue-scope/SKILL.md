@@ -3,20 +3,29 @@ name: issue-scope
 disable-model-invocation: false
 description: >
   Brainstorm features into scoped implementation plans with test decomposition.
-  Socratic questioning, codebase exploration, and Sequential Thinking produce
-  a plan file compatible with /tdd, plus an ADR when the architectural decision
-  warrants recording. When the work is too big for one plan, an INVEST/SPIDR gate
-  splits it into a GitHub epic with linked child issues and a derived dependency
-  graph. Invoke explicitly with /issue-scope.
+  Socratic questioning, parallel codebase exploration and a coverage check
+  produce a plan file compatible with /tdd, plus an ADR when the architectural
+  decision warrants recording. When the work is too big for one plan, an
+  INVEST/SPIDR gate splits it into a GitHub epic with linked child issues and a
+  derived dependency graph. Invoke explicitly with /issue-scope.
 ---
 
 # Issue Scope
 
-Brainstorm → Explore → Question → Approach → Decompose → Plan. Produces a `docs/plans/YYYY-MM-DD-<feature>.md` that `/tdd` consumes directly.
+```
+1 Input → 2 Explore → 3 Brainstorm → 4 Approaches → 5 Decompose → 7 Check → 8 Write Plan
+                                                          └─ 6 Epic Escape Hatch (branch, ends the run)
+```
 
-When the work turns out to be too big for one plan, **Phase 5.5** splits it into a GitHub epic with linked child issues instead of producing a plan nobody can execute.
+Produces a `docs/plans/YYYY-MM-DD-<feature>.md` that `/tdd` consumes directly — format and contract in [references/plan-format.md](references/plan-format.md).
+
+When the work turns out to be too big for one plan, **Phase 6** splits it into a GitHub epic with linked child issues instead of producing a plan nobody can execute.
 
 Inspired by [Superpowers](https://github.com/obra/superpowers) methodology: plans should be "clear enough for an enthusiastic junior engineer with poor taste and no judgement" to execute.
+
+**Reason directly.** This skill used to route Phases 4 and 5 through the Sequential Thinking MCP. It no longer does — on a current model that mostly serialises reasoning you do better internally, and bills for the transcript. Think, then present the conclusion. The approaches and the slices are the output; the deliberation isn't.
+
+**This skill does not use plan mode, deliberately.** Plan mode is a permission state that ends at one approval and hands off to implementation in the same conversation. `/issue-scope` produces a durable artefact for a *later* `/tdd` session, and `EnterPlanMode` causes the context amnesia `/tdd` already documents — exiting it loses the skill. Never enter plan mode from inside this skill. Phases 1–5 write nothing to disk; the only files this skill creates are the plan, the ADR, and (in Phase 6) GitHub issues.
 
 ---
 
@@ -35,17 +44,18 @@ If the user provides no input, ask: "What do you want to build?"
 
 ## Phase 2: Explore
 
-Spawn **Explore agent** (`subagent_type="Explore"`, thoroughness `"very thorough"`).
+Spawn **four Explore agents concurrently** — all four in a single message, `subagent_type="Explore"`, thoroughness `"very thorough"`. One agent per lens.
 
-Find:
-- Relevant files and modules for this feature
-- Existing patterns (file structure, naming, architecture conventions)
-- Dependencies and integration points
-- Similar features/tests to use as templates
-- Database schema if relevant (use Supabase MCP)
-- **Existing ADRs** — does the repo have `docs/adr/` (or `docs/decisions/`, `doc/adr/`)? Which existing ADRs constrain this feature, and would any be superseded by it?
+Four narrow agents beat one broad one here, and cost the same wall-clock. Each is blind to what the others find, so none of them quietly decides a concern is covered; and a single agent given six unrelated objectives reliably shortchanges the last two.
 
-**Also discover session constants** (carried into the plan for TDD):
+| Lens | Find |
+|---|---|
+| **Architecture & patterns** | Relevant files and modules · file structure, naming and architecture conventions · integration points · similar features to use as templates |
+| **Test infrastructure** | The session constants below · test helpers and fixtures · E2E command, directory and auth fixture · **which existing tests already cover this area** |
+| **Data & contracts** | Database schema (use Supabase MCP) · migrations · RLS policies · types and API surface the feature touches |
+| **Prior art & constraints** | **Existing ADRs** — `docs/adr/`, `docs/decisions/` or `doc/adr/`: which constrain this feature, and would any be superseded? · git history and closed PRs/issues for this area · **the binding rules in the project `CLAUDE.md` and `~/.claude/rules/`** |
+
+**Session constants** (from the test-infrastructure lens; carried into the plan for TDD):
 
 | Constant | Example |
 |----------|---------|
@@ -53,15 +63,20 @@ Find:
 | Test file pattern | colocated `*.test.ts` or `tests/__tests__/` |
 | Test helpers | `tests/helpers/isolated-test-household.ts` |
 
+The **constraints** lens matters more than it looks. House rules like the `actions.ts`/`logic.ts` split, worker-scoped fixtures, or the ban on `any` change how the work decomposes. Discovered here they shape the slices; discovered later they're rework that `code-reviewer` finds after the code exists. Quote the rules that bind — don't paraphrase them.
+
 **Use Context7 MCP** if the feature involves framework behavior (Next.js, Supabase, React, Tailwind).
 
 ### Validate & Classify
 
-After exploration, present a curated findings summary to the user:
+After all four agents return, reconcile their findings and present one curated summary to the user:
 - Key files and modules discovered
 - Existing patterns that apply
-- Session constants found
+- Session constants found, and which existing tests already cover this area
 - ADR convention (path and numbering), plus any existing ADRs this feature touches
+- **Constraints** — the house rules from `CLAUDE.md` / `~/.claude/rules/` that bind this feature, quoted
+
+If two lenses disagree, say so rather than silently picking one — a contradiction between what the schema says and what the tests assume is usually the most interesting thing exploration found.
 
 Then use **AskUserQuestion**: "Does this match your understanding of the landscape? Anything I missed?"
 
@@ -78,7 +93,7 @@ an epic — a 12-file rename isn't one, a 3-file feature spanning two unshipped
 capabilities is. If the feature looks like it covers 2+ independently shippable
 capabilities, apply the INVEST gate in
 [references/splitting-framework.md](references/splitting-framework.md) now and go
-to **Phase 5.5** if it fails on Small alone. Otherwise carry on — the honest call
+to **Phase 6** if it fails on Small alone. Otherwise carry on — the honest call
 usually comes after decomposition, when you can see what the work actually is.
 
 **Spike detection:** If Explore reveals significant unknowns (unfamiliar library, unclear DB design, undocumented external API), offer a **spike plan** instead of a full plan:
@@ -127,35 +142,37 @@ Typically 3-6 questions. Never more than 8.
 
 ## Phase 4: Approaches
 
-Use **Sequential Thinking** (`mcp__sequential-thinking__sequentialthinking`) to analyze 2-3 approaches.
+Work out 2-3 genuinely distinct approaches. Reason it through directly — no Sequential Thinking pass.
 
-For each approach, present:
+For each approach, know:
 - **Name** — short label
 - **How it works** — 2-3 sentences
-- **Trade-offs** — pros and cons
+- **Trade-offs** — what it makes easy, what it makes hard
 - **Fits existing patterns?** — reference what Explore found
 
-**Lead with your recommendation and explain why.** The user decides.
+**Present them with `AskUserQuestion`, using `preview`.** One option per approach, your recommendation first and labelled `(Recommended)`. This is a comparison, so make it comparable:
 
-Present in a clear format:
+- `label` — the approach name
+- `description` — the trade-off in one line, not a summary of how it works
+- `preview` — a compact sketch of what this approach *looks like*: the file layout it produces, the data flow, or the shape of the key function. This is what makes the choice real rather than a wall of prose the user skims.
+
+One `preview` per option — the UI shows the focused option's preview beside the list, so write each as if it stands alone:
 
 ```
-### Approach A: [name] (Recommended)
-[How it works]
-+ [Pro]
-+ [Pro]
-- [Con]
+  actions.ts (thin)
+    └─ logic.ts
+         └─ categoryTree.ts        ← tree assembled in TS
 
-### Approach B: [name]
-[How it works]
-+ [Pro]
-- [Con]
-- [Con]
+  one fetch, built in memory
+  unit-testable without a database
+  n+1 avoided
 ```
 
-**Wait for user to choose.** If they want a hybrid, clarify what that means concretely.
+Keep it to a single question with `multiSelect: false` — previews don't render on multi-select.
 
-If there's genuinely only one sensible approach, say so — but still run the ADR check below before Phase 5.
+**Lead with your recommendation and explain why. The user decides.** If they want a hybrid, clarify what that means concretely before moving on.
+
+If there's genuinely only one sensible approach, say so in prose and skip the question — but still run the ADR check below before Phase 5.
 
 ### ADR check (always run)
 
@@ -197,14 +214,14 @@ This finds ADRs added on *any* branch, not just the ones present in your working
 
 ## Phase 5: Decompose
 
-Use **Sequential Thinking** to break the chosen approach into ordered slices.
+Break the chosen approach into ordered slices. Reason it through directly. If the decomposition feels genuinely tangled, that isn't a signal to reach for a thinking tool — it's usually Phase 6 telling you this is an epic.
 
 Each slice = one RED-GREEN-REFACTOR cycle in TDD. Slices build on each other.
 
 **Slice design rules:**
 - Each delivers testable value (not "set up infrastructure")
 - Vertical: touches all layers needed (DB → logic → API → UI) — not horizontal layers
-- 3-7 slices typical. If >7, **stop and go to Phase 5.5** — that's a prompt to run the INVEST gate, not a verdict. The slices you just produced are the raw material for the split, not wasted work.
+- 3-7 slices typical. If >7, **stop and go to Phase 6** — that's a prompt to run the INVEST gate, not a verdict. The slices you just produced are the raw material for the split, not wasted work.
 - First slice is the smallest thing that proves the core works
 - Last slice handles edge cases and polish
 
@@ -213,6 +230,10 @@ Each slice = one RED-GREEN-REFACTOR cycle in TDD. Slices build on each other.
 - Include test type (unit / integration / e2e / pgtap)
 - Note what the test builds on
 
+**State each slice as a behaviour delta, not an end state** — exactly one of `ADDED` / `MODIFIED` / `REMOVED`, describing what changes relative to the code that exists today. "Household creation validates names" makes the executor re-derive what's new; "MODIFIED — `createHousehold` now rejects a name already used in the household" doesn't. If a slice needs two markers, it's two slices. Full rationale in [references/plan-format.md](references/plan-format.md) §3.
+
+**A `MODIFIED` or `REMOVED` slice must name the existing tests it breaks.** The test-infrastructure lens in Phase 2 found them. This is the thing the old format lost most often: the plan changes behaviour that three existing tests assert, never says so, and the executor can't tell a regression from an intended change. If you checked and there are none, say `none` — the word, so the user knows it was checked.
+
 **Present to user for approval:**
 
 ```
@@ -220,18 +241,24 @@ Feature: [name]
 
 Slice 1: [foundation — e.g., core validation logic]
   Type: unit | Builds on: nothing
+  Delta: ADDED — callers can validate a category name before submitting
+  Touches existing tests: none
   - [ ] returns valid result for normal input
   - [ ] rejects empty name
   - [ ] trims whitespace
 
 Slice 2: [next layer — e.g., database operations]
   Type: integration | Builds on: Slice 1
+  Delta: MODIFIED — createCategory now rejects a duplicate name in the same household
+  Touches existing tests: tests/categories/create.test.ts (asserts the old permissive behaviour)
   - [ ] creates record and returns ID
   - [ ] returns error for duplicate name
   - [ ] enforces RLS — user can only access own data
 
 Slice 3: [API endpoint]
   Type: integration | Builds on: Slice 2
+  Delta: ADDED — the category can be created over HTTP
+  Touches existing tests: none
   - [ ] POST returns 201 with valid payload
   - [ ] POST returns 400 for invalid payload
   - [ ] POST returns 404 when parent not found
@@ -239,12 +266,16 @@ Slice 3: [API endpoint]
 
 **Wait for approval.** User may reorder, split, merge, or drop slices.
 
+**If something is still unresolved, mark it — don't decide it.** Anything Phase 3 didn't settle and Phase 2 couldn't find becomes a `[NEEDS CLARIFICATION]` item naming the slice it blocks, carried into the plan's `## Open questions`. A guess is worse than an admission here, because `/tdd` will implement a plausible guess faithfully and nothing downstream flags it. This is not a way to dodge Phase 3 — if you can ask the user now, ask now.
+
 ---
 
-## Phase 5.5: Epic Escape Hatch
+## Phase 6: Epic Escape Hatch *(branch — replaces Phases 7-8)*
 
-Reached from Phase 2 (2+ independently shippable capabilities) or Phase 5 (>7
-slices). Neither is a verdict — both are prompts to run the gate.
+Not a step every run takes. Reached from Phase 2 (2+ independently shippable
+capabilities) or Phase 5 (>7 slices). Neither is a verdict — both are prompts to
+run the gate. A run that enters Phase 6 ends here; a run that doesn't skips
+straight from Phase 5 to Phase 7.
 
 **1. Run the INVEST gate** — [references/splitting-framework.md](references/splitting-framework.md) §1.
 
@@ -278,60 +309,68 @@ them via `github-issue-relationships`, and **verify the links took**
 so the verdict has nowhere else to land — and epic-sized work is the most
 ADR-worthy case there is, since every child inherits the decision without
 re-deciding it. If the check said write one, write it now (`docs/adr/NNN-<slug>.md`,
-format in Phase 6) and link it from the epic body. If it said no, record that and
+format in Phase 8) and link it from the epic body. If it said no, record that and
 why in the epic body. Either way the ADR belongs to the **epic**, not to any one
 child.
 
 Then hand back with the ready-now children and offer `/issue-scope <child>`.
 
-**Phase 5.5 ends the run — do not continue to Phase 6.** The epic and its
+**Phase 6 ends the run — do not continue to Phase 7 or 8.** The epic and its
 children are the deliverable. Children are scoped individually when picked up, so
 no plan file is written here, for the epic or for any child.
 
 ---
 
-## Phase 6: Write Plan
+## Phase 7: Coverage Check
 
-After user approves, write the plan file.
+Runs after the Phase 5 approval, **before** the file is written. Skipped only by
+Phase 6, which ends the run.
+
+Work through the checklist in [references/plan-format.md](references/plan-format.md) §5.
+Every item is checkable against text already in this conversation or against the
+filesystem — no judgement, no agent, no extra exploration.
+
+The one that earns the phase: **every acceptance criterion from Phase 3 maps to
+at least one test bullet.** A requirement that gets discussed in the brainstorm
+and silently never becomes a slice is the single most common way these plans
+fail, and it is invisible unless something checks for it.
+
+**Fix what you find, now.** A coverage failure is not a follow-up — the whole
+value is catching it while the reasoning is still in context. Deferring it to an
+issue is just shipping a broken plan with a ticket attached.
+
+**Report what you checked out loud, passes included.** A silent check is
+indistinguishable from a skipped one, and this is exactly the kind of step that
+decays into a claim.
+
+**This is not the plan review.** `/tdd` Stage 0-review spawns `tdd-plan-reviewer`
+(Opus, cold context) for *judgement* — testability, YAGNI, architectural fit.
+This pass is *mechanical completeness*: did everything we agreed on actually make
+it into the file. They catch different failures. Neither replaces the other.
+
+---
+
+## Phase 8: Write Plan
+
+After the coverage check passes, write the plan file.
 
 **File path:** `docs/plans/YYYY-MM-DD-<feature-slug>.md`
 
 Use today's date. Slugify the feature name (lowercase, hyphens).
 
-**Plan format:**
+**Plan format:** [references/plan-format.md](references/plan-format.md) §2 — the
+template, and §1, the `- [ ]` contract that governs it.
 
-```markdown
-# TDD Plan: [feature name]
+Read §1 before deviating from the template in any way. `/tdd` finds its next test
+with a literal `- \[ \]` regex and treats **every** unchecked checkbox in the file
+as a test to write, so open questions use `- [?]` and affected existing tests are
+a plain line. Get that wrong and `/tdd` writes a test named after your question.
 
-## Context
-[1-2 sentences: what problem this solves, why now]
-
-## Architecture
-[2-3 sentences: chosen approach, key decisions made during brainstorming]
-
-**Decision record:** [ADR-NNN](../adr/NNN-slug.md) — or "None: [why this decision doesn't need one]"
-
-## Session Constants
-Test command: [from explore]
-Test file pattern: [from explore]
-Test helpers: [from explore]
-
-## Slice 1: [description]
-Type: unit | Status: pending
-Files: [exact paths to create/modify]
-
-- [ ] test description 1
-- [ ] test description 2
-- [ ] test description 3
-
-## Slice 2: [description]
-Type: integration | Status: pending
-Files: [exact paths]
-Builds on: Slice 1
-
-- [ ] test description 1
-- [ ] test description 2
-```
+Beyond the old format, the plan now carries:
+- `## Acceptance` — the one user-observable assertion that proves the feature, plus `User-facing: yes|no`. `/tdd` Stage 0f builds its acceptance test from this.
+- `## Constraints` — the binding house rules Explore quoted
+- `## Open questions` — `[NEEDS CLARIFICATION]` items, or `None.`
+- Per slice: `Behaviour delta:` and `Touches existing tests:`
 
 **If the ADR check approved one, write it too** — `docs/adr/NNN-<slug>.md`, matching the repo's existing ADR format. If there is no existing format, use:
 
@@ -376,6 +415,9 @@ Status stays **Proposed** until the implementing PR merges, then flips to **Acce
 - **Challenge scope creep.** If a slice has >5 tests, it probably needs splitting.
 - **Respect existing patterns.** Explore findings override theoretical "best practices."
 - **Trade-offs are explicit.** The user makes architectural decisions, not the AI.
-- **Never produce a plan you know is too big.** An 11-slice plan is not a plan, it's a backlog with no issue numbers. Go to Phase 5.5 — the thinking is kept, not thrown away.
+- **Never produce a plan you know is too big.** An 11-slice plan is not a plan, it's a backlog with no issue numbers. Go to Phase 6 — the thinking is kept, not thrown away.
 - **An epic is not the answer to "unclear".** It's the answer to "clear but too big". The INVEST gate is what tells the two apart; don't skip it because the feature obviously feels large.
 - **Always run the ADR check.** Every run reaches a verdict — "ADR-NNN" or "no ADR, because…" — recorded in the plan or the epic. Silently not considering it is the failure mode; deciding against one is fine.
+- **Never write a plan that fails its own coverage check.** Fix it in Phase 7, in context. A coverage failure filed as a follow-up is a broken plan with a ticket attached.
+- **An unknown gets a marker, not an invented answer.** `[NEEDS CLARIFICATION]` naming the slice it blocks beats a plausible guess — `/tdd` implements guesses faithfully and nothing downstream catches them.
+- **Say what changes, not what exists.** Every slice is an ADDED / MODIFIED / REMOVED delta, and every MODIFIED or REMOVED names the existing tests it breaks. A plan that silently invalidates existing tests hands the executor a red suite it can't interpret.

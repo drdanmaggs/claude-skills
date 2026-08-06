@@ -2,7 +2,7 @@
 
 The criteria for **whether** something must be split, **where** to cut it, and
 **what makes a child good**. Single source of truth — read by
-[SKILL.md](../SKILL.md) Phase 2 and 5.5, and by
+[SKILL.md](../SKILL.md) Phase 2 and 6, and by
 [agents/epic-splitter.md](../../../agents/epic-splitter.md).
 
 Volume is not the test. A 12-file rename is not an epic; a 3-file feature
