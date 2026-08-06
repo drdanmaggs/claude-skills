@@ -88,8 +88,13 @@ a sample. This is the branch's first review and the only one that sees it whole;
 every later round is scoped against this one.
 
 The review auto-fixes what it can, so those commits land *before* the PR exists
-and the PR opens with them already in. **Hold the artefact it emits** — the block
-beginning `<!-- local-review sha=... -->`. Stage 4 posts it.
+and the PR opens with them already in. It writes its artefact to
+**`.local-review.md`** at the repo root; Stage 4 posts that file.
+
+**There is nothing to hold.** Do not carry the `<!-- local-review sha=... -->`
+block forward in the conversation — it is on disk, and disk survives the two
+stages between here and Stage 4. Carrying it was the compaction-fragile step this
+replaced.
 
 If the review's circuit breaker trips (not converging after 3 loops), continue to
 Stage 3 anyway. The artefact records the unresolved findings and the PR carries
@@ -159,15 +164,33 @@ Report: PR URL.
 
 ## Stage 4: Post the Review Artefact
 
-Post the block held from Stage 2, verbatim:
+**Check the file is this branch's review before posting it.** A `.local-review.md`
+left behind by another branch is worse than no artefact: it posts a real-looking
+review of code nobody reviewed, and CI's sha assertion is the only thing standing
+between that and a green check.
 
 ```bash
-gh pr comment <PR_NUMBER> --body-file -
+REVIEWED_SHA=$(sed -n 's/.*<!-- local-review sha=\([0-9a-f]\{40\}\).*/\1/p' .local-review.md | head -1)
+if [ "$REVIEWED_SHA" != "$(git rev-parse HEAD)" ]; then
+  echo "STALE: .local-review.md reviews ${REVIEWED_SHA:-<no marker>}, HEAD is $(git rev-parse HEAD)"
+  exit 1
+fi
 ```
 
-Use `--body-file -` and pipe the body in. Passing it via `--body` mangles the
-`<!-- local-review ... -->` marker through shell quoting, and CI parses that
-marker — a mangled one reads as no review at all.
+On mismatch, **do not post** — re-run Stage 2 against the current HEAD and try
+again. Never hand-edit the sha to make the check pass; the marker's whole job is
+to say which sha was actually reviewed.
+
+Then post the file verbatim:
+
+```bash
+gh pr comment <PR_NUMBER> --body-file .local-review.md
+```
+
+Pass the real file. Not `--body`, and not `--body-file -` fed from something you
+reconstructed in conversation: `--body` mangles the `<!-- local-review ... -->`
+marker through shell quoting, and a reconstruction is a retyping — CI parses that
+marker, and a mangled one reads as no review at all.
 
 Verify the comment landed (`gh pr view <PR> --json comments`) before continuing.
 This is the step the whole design rests on; a silent failure here reproduces the
