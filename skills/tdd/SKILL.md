@@ -48,9 +48,27 @@ Before any exploration or planning, get onto a fresh feature branch — **follow
 
 This ensures all exploration, planning, and coding happens on a clean branch against the latest codebase.
 
-### Arm the Phase Gate
+### Arm the Session State Files
 
-Ensure `.tdd-phase` is in the repo's `.gitignore` (append it if missing — it's per-session state and must never be committed). The file itself gets written per phase inside the loop; see [The `.tdd-phase` File](#the-tdd-phase-file-declare-the-phase-before-you-spawn).
+This session's state lives in three repo-root dotfiles rather than in the conversation, so it survives `/compact`, `/clear`, and a cold restart:
+
+| File | Written by | Holds |
+|------|------------|-------|
+| `.tdd-phase` | this skill | the current phase — `RED` / `GREEN` / `REFACTOR` |
+| `.tdd-session.md` | this skill | the resolved Session Constants table |
+| `.local-review.md` | `code-reviewer` | the latest review artefact, verbatim |
+
+Ensure **all three** are in the repo's `.gitignore`, appending any that are missing — they are per-session state and must never be committed:
+
+```bash
+for f in .tdd-phase .tdd-session.md .local-review.md; do
+  grep -qxF "$f" .gitignore 2>/dev/null || printf '%s\n' "$f" >> .gitignore
+done
+```
+
+`.tdd-phase` is written per phase inside the loop; see [The `.tdd-phase` File](#the-tdd-phase-file-declare-the-phase-before-you-spawn). `.tdd-session.md` is written once, at [Session Constants](#session-constants). Both are deleted at [Completion](#completion) — `.local-review.md` belongs to `code-reviewer` and outlives this skill.
+
+**Why on disk:** subagents cannot read your conversation, and compaction garbles paths. A constant that exists only in context is a constant that stops existing at the first boundary.
 
 ### Planning Decision Tree
 
@@ -80,13 +98,21 @@ Ensure `.tdd-phase` is in the repo's `.gitignore` (append it if missing — it's
 - Plan approved → Proceed to **Stage 0f** (Acceptance Test)
 
 **0f — Acceptance Test (GOOS Outer Loop)**
-After plan is approved, before inner loop begins. Decide inline: does this feature have user-facing behaviour (new page, form, flow, navigation, toast, dialog)?
+After plan is approved, before inner loop begins. [Session Constants](#session-constants) must already be resolved and written to `.tdd-session.md` by this point — 0f spawns a subagent, and every spawn reads its constants from that file.
+
+Decide inline: does this feature have user-facing behaviour (new page, form, flow, navigation, toast, dialog)?
 - YES → spawn tdd-test-writer in `Mode: acceptance` (see [phase-prompts.md](references/phase-prompts.md#stage-0f-acceptance-test-goos-outer-loop))
-- NO → skip 0f, set `Acceptance test path: none` in session constants
+- NO → skip 0f, `Acceptance test path` is `none`
 
 **Gate:** test written + fails for expected reason → commit `test: add acceptance test for {feature_name}`
 
-Then proceed to **Session Constants** (Stage 0a) → inner loop.
+**Then append the outcome to `.tdd-session.md`** — this is the one constant not known at discovery time, and it must land on disk like the rest:
+
+```bash
+printf '| Acceptance test path | %s |\n' "tests/e2e/feature.spec.ts" >> .tdd-session.md   # or "none"
+```
+
+Then proceed to the inner loop.
 
 **See [planning-workflow.md](references/planning-workflow.md) for:**
 - Complete heuristic evaluation criteria
@@ -98,6 +124,12 @@ Then proceed to **Session Constants** (Stage 0a) → inner loop.
 ### Session Constants
 
 Discovered during Stage 0 (Explore agent) and reused in every phase brief. Prefer values the project's `CLAUDE.md` already documents (test commands especially); otherwise discover them. When discovering constants, also find: E2E test command (`playwright` in package.json scripts), E2E test directory (look for `tests/e2e/` or `e2e/`), and auth fixture path (look for `auth-fixture.ts` in E2E directories). Also resolve the **absolute** path to this skill's bundled `references/test-standards.md` (wherever the plugin is installed) so subagents can actually read it.
+
+**Write the resolved table to `.tdd-session.md` at the repo root as soon as it is discovered — before the first subagent spawn of the session, Stage 0f's included.** Use the Write tool; the file is a plain markdown table with a `| Constant | Value |` header. It is the handoff to every subagent and the only copy that survives compaction.
+
+Five of these constants are discovered here and recorded nowhere else — E2E test command, E2E test directory, auth fixture, the absolute standards path, and (at Stage 0f) the acceptance test path. The standards path is the load-bearing one: it contains the plugin **version** (`…/plugins/cache/claude-skills/claude-skills/<version>/…`), so it is machine-specific, it must never be committed, and a subagent that cannot read it cannot follow the project's test standards at all.
+
+They go in `.tdd-session.md` and **not** in the plan file, because `/tdd` runs without a plan on the SIMPLE path and in Bug-Fix Mode, and because the plan file is committed.
 
 | Constant | Example | Notes |
 |----------|---------|-------|
@@ -144,8 +176,8 @@ printf 'RED' > .tdd-phase        # or GREEN, or REFACTOR
 Rules:
 - **Write it before the spawn, not after.** The gate is what stops a subagent from cheating; declaring the phase late defeats the point.
 - **The orchestrator is the only writer.** Subagents never change their own phase — that would be marking their own homework.
-- **Delete it at Completion** (`rm -f .tdd-phase`), so ordinary non-TDD editing in the repo is unconstrained afterwards.
-- **Add `.tdd-phase` to the repo's `.gitignore`** during Stage 0 if it isn't there. It's session state, never committed.
+- **Delete it at Completion**, alongside `.tdd-session.md`, so ordinary non-TDD editing in the repo is unconstrained afterwards.
+- **Gitignored during Stage 0** — see [Arm the Session State Files](#arm-the-session-state-files). It's session state, never committed.
 
 If the gate denies an edit, that is the gate working. Fix the phase or fix the edit — never delete `.tdd-phase` to get around it.
 
@@ -261,8 +293,20 @@ refactor: [what was tidied]
 
 Read the plan file:
 - **More unchecked tests in current slice?** → return to step 1
-- **Slice complete?** → **always** spawn tdd-refactorer on the full slice (cumulative mess builds even when individual cycles are small), then update slice status in plan (`Status: done`), `TaskUpdate` the slice task to `status: completed`, return to step 1
+- **Slice complete?** → **always** spawn tdd-refactorer on the full slice (cumulative mess builds even when individual cycles are small), then update slice status in plan (`Status: done`), `TaskUpdate` the slice task to `status: completed`, **recommend a compact** (below), return to step 1
 - **All tests checked?** → go to Completion
+
+#### At each slice boundary: recommend `/compact`
+
+After the `TaskUpdate`, tell the user:
+
+> Slice N done. Good point to `/compact keep the plan path, current slice, and .tdd-session.md contents` — I'll pick up where I left off.
+
+**A recommendation, not a stop.** The loop legitimately continues in-session, and a hard stop mid-feature would be hostile — this is the one boundary in the chain that is not a handoff between skills.
+
+The slice boundary is the right grain. Everything is at rest: the full-slice refactor is done, the commit has landed, the plan says `Status: done`, the Task is completed. Per-cycle would be roughly three times too often, and mid-cycle would drop a phase.
+
+Give the focus argument, not a bare `/compact` — a compact that forgets the plan path or the standards path costs more than it saves. The three things named are exactly what Stage 0 would otherwise have to rediscover, and `.tdd-session.md` survives on disk regardless, so the focus argument is belt to its braces.
 
 ### Warm Loop (Token Optimization)
 
@@ -348,7 +392,6 @@ Commits have been happening throughout the loop (behavioral after GREEN, structu
 
 1. Mark plan file complete (all slices `Status: done`)
 2. Verify `git log --oneline` shows clean commit history — each commit is either behavioral or structural, never mixed
-3. Tear down the phase gate: `rm -f .tdd-phase` — leaving it behind constrains ordinary editing in the repo after the session ends
 
 ### Outer Loop: Acceptance Test Gate
 
@@ -366,15 +409,35 @@ Otherwise, run: `{e2e_test_command} {acceptance_test_path}`
 
 After 2 gap cycles if still failing, surface to user with: the failure message, possible causes (env issue vs logic gap vs incorrect test assumption), and ask: fix the test / skip and ship / investigate further.
 
-### Bug-Fix Mode → Ship
+### Tear Down the Session State
 
-Invoke `Skill("ship")`.
+**Last thing before the stop, and after the acceptance gate** — a gap cycle is a real RED-GREEN-REFACTOR cycle and needs the phase gate armed:
 
-`/ship` takes it from here: lint/type-check → code review → fix loop → draft PR → autonomous review-loop → undraft → CI → READY TO MERGE.
+```bash
+rm -f .tdd-phase .tdd-session.md
+```
 
-### Feature Mode → Summary + Handoff
+Both go, together. A leftover `.tdd-phase` constrains ordinary editing in the repo once the session ends; a leftover `.tdd-session.md` says "a TDD session is live" when none is — and the handoff gate reads exactly that signal, so a stale one blocks the `/ship` the user is about to be told to run.
 
-Stop. Do **not** invoke `/ship`. Deliver the Feature Summary to the user.
+Leave `.local-review.md` alone. It belongs to `code-reviewer`, and `/ship` still has to post it.
+
+### Both Modes → Stop
+
+**The session ends here, in both modes.** Do not invoke `Skill("ship")`. Do not invoke `Skill("pr-quality")`. `/ship` is a fresh-context skill: it bootstraps from `git branch --show-current` and the branch diff, and Stage 2's review reads `.local-review.md` off disk. It needs nothing this session is holding.
+
+Measured across 484 sessions: `/tdd` alone peaks at a 131k mean context; `tdd` + `ship` in one session peaks at **297k**. Everything above roughly 200k is being degraded by context rot rather than helped by it — the extra tokens are the *worked-through* history of getting here, and `/ship` needs the result, not the working.
+
+You cannot type `/clear` yourself; there is no tool for it. So this is a stop-and-instruct, and the instruction is the last thing you say.
+
+#### Bug-Fix Mode
+
+Report the fix, the root cause, and the commits. Then, verbatim:
+
+> Fix complete on `<branch>`. Run `/clear`, then `/ship`.
+
+#### Feature Mode → Summary + Handoff
+
+Deliver the Feature Summary to the user.
 
 **Step 1 — Output the completion banner first:**
 
@@ -422,9 +485,11 @@ If the user confirms, run the dev command in the background.
 
 **Step 5 — Next steps**
 
-Remind the user:
+Tell the user, verbatim:
 
-> "When you're happy with it, run `/ship` to lint, type-check, get a code review, and open a PR."
+> When you're happy with it, run `/clear`, then `/ship` to lint, type-check, get a code review, and open a PR.
+
+The `/clear` is not optional politeness — see [Both Modes → Stop](#both-modes--stop). `/ship` cold-starts from the branch and reads the review artefact off disk.
 
 ---
 

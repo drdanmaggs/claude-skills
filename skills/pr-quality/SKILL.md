@@ -144,11 +144,22 @@ git push origin HEAD
 If nothing to push (remote already up to date), skip push but still enter
 Step 4 — a review may already be waiting.
 
-Post the artefact from Step 2b, after the push so its sha matches what CI sees:
+Post the artefact from Step 2b, after the push so its sha matches what CI sees.
+`code-reviewer` wrote it to **`.local-review.md`** at the repo root; post that
+file, and check first that it reviews the sha you just pushed:
 
 ```bash
-gh pr comment $PR_NUMBER --body-file -
+REVIEWED_SHA=$(sed -n 's/.*<!-- local-review sha=\([0-9a-f]\{40\}\).*/\1/p' .local-review.md | head -1)
+if [ "$REVIEWED_SHA" != "$(git rev-parse HEAD)" ]; then
+  echo "STALE: .local-review.md reviews ${REVIEWED_SHA:-<no marker>}, HEAD is $(git rev-parse HEAD)"
+  exit 1
+fi
+gh pr comment "$PR_NUMBER" --body-file .local-review.md
 ```
+
+The guard matters more here than anywhere: this loop rebases on every iteration,
+so HEAD moves under the file. A mismatch means the review predates the rebase —
+re-run Step 2b rather than posting it.
 
 **Every push carries its own artefact.** CI asserts that the head sha has been
 reviewed, so a push without one turns the PR red — correctly. Resist the urge to

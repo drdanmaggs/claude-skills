@@ -1,7 +1,17 @@
 {
-  "description": "TDD phase gate (RED/GREEN/REFACTOR file discipline when a repo has an active .tdd-phase file), issue label gate (an issue must be created with a label; the label set must not grow without approval), and pnpm install-freshness (reinstalls at session start when node_modules has fallen behind pnpm-lock.yaml)",
+  "description": "TDD phase gate (RED/GREEN/REFACTOR file discipline when a repo has an active .tdd-phase file), handoff gate (refuses to chain /tdd, /ship or /pr-quality into a session that already has a live .tdd-session.md), issue label gate (an issue must be created with a label; the label set must not grow without approval), and pnpm install-freshness (reinstalls at session start when node_modules has fallen behind pnpm-lock.yaml)",
   "hooks": {
     "PreToolUse": [
+      {
+        "matcher": "^Skill$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/handoff-gate.sh",
+            "timeout": 5
+          }
+        ]
+      },
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [

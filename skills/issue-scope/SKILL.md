@@ -313,7 +313,15 @@ format in Phase 8) and link it from the epic body. If it said no, record that an
 why in the epic body. Either way the ADR belongs to the **epic**, not to any one
 child.
 
-Then hand back with the ready-now children and offer `/issue-scope <child>`.
+Then hand back with the ready-now children and **stop**. Tell the user, verbatim:
+
+> Epic `#<n>` created with `<k>` children. Run `/clear`, then `/issue-scope <child>`
+> to scope the first one.
+
+Same reasoning as Phase 8's stop: the epic and its issue bodies are the durable
+artefact, and scoping a child in this session drags the whole epic-split
+brainstorm along with it into work that only needs the child. Do not invoke
+`/issue-scope` on a child yourself.
 
 **Phase 6 ends the run — do not continue to Phase 7 or 8.** The epic and its
 children are the deliverable. Children are scoped individually when picked up, so
@@ -399,12 +407,28 @@ can't tell you later.]
 
 Status stays **Proposed** until the implementing PR merges, then flips to **Accepted**. Write it now rather than after implementation: the reasoning is freshest here, and it's the input `/tdd` needs, not an artefact of it.
 
-**After writing the plan:**
+**After writing the plan — this is where the run ends:**
 
 1. Show the file path(s) to the user — plan, and ADR if written
-2. Offer handoff: "Ready to start TDD? I can invoke `/tdd` which will pick up this plan."
-3. If user says yes, invoke `/tdd` via Skill tool
-4. If user says no, end gracefully — plan is saved for later
+2. **Do not invoke `/tdd`.** Do not offer to. The plan file is the complete
+   handoff: `/tdd` Stage 0 opens with *"0-check: look for existing plan file in
+   `docs/plans/*.md`"* and is designed to cold-start from it, re-exploring the
+   codebase from scratch.
+3. Tell the user, verbatim:
+
+   > Plan written to `<path>`. Run `/clear`, then `/tdd <path>`.
+
+**Why this is a stop and not an offer.** Everything this session accumulated —
+the brainstorm, the Explore dumps, the approaches you considered and rejected —
+is *input* that has already been distilled into the plan file. Carrying it into
+TDD costs roughly 200k tokens and buys nothing the plan does not already say.
+Measured across 484 sessions: `/tdd` alone peaks at a 131k mean, `issue-scope` +
+`tdd` + `ship` in one session peaks at **537k**. Context rot makes those tokens
+actively harmful, not merely expensive — quality degrades with absolute input
+length long before the window fills.
+
+You cannot type `/clear` yourself; there is no tool for it. So the stop is a
+stop-and-instruct, and the instruction has to be the last thing you say.
 
 ---
 
